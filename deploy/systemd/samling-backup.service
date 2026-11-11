@@ -1,0 +1,40 @@
+# Samling - scheduled encrypted backup (started by samling-backup.timer).
+[Unit]
+Description=Samling encrypted backup
+Documentation=https://github.com/rom/samling/blob/main/docs/deployment.md
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=samling
+Group=samling
+# Master key and backup passphrase are root-only files handed over as credentials.
+LoadCredential=master.key:/etc/samling/master.key
+LoadCredential=backup.pass:/etc/samling/backup.passphrase
+ExecStart=/usr/local/lib/samling/backup.sh --dir /var/backups/samling --keep 14 --config /etc/samling/samling.yaml
+
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+UMask=0077
+ProtectSystem=strict
+ReadWritePaths=/var/lib/samling /var/backups/samling
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectProc=invisible
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+SystemCallErrorNumber=EPERM

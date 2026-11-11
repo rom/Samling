@@ -1,0 +1,92 @@
+policy_module(samling, 0.1.0)
+
+########################################
+# Declarations
+#
+
+## <desc>
+##	<p>
+##	Allow samling to connect to a PostgreSQL server
+##	(database.driver: postgres).
+##	</p>
+## </desc>
+gen_tunable(samling_can_connect_postgresql, false)
+
+## <desc>
+##	<p>
+##	Allow samling to open outbound TCP connections to any port
+##	(needed for S3 compatible object storage, storage.backend: s3).
+##	</p>
+## </desc>
+gen_tunable(samling_can_network_connect, false)
+
+# The daemon domain and its entry point (/usr/local/bin/samling).
+type samling_t;
+type samling_exec_t;
+init_daemon_domain(samling_t, samling_exec_t)
+
+# Configuration, TLS certificates, master key (/etc/samling).
+type samling_etc_t;
+files_config_file(samling_etc_t)
+
+# Database, encrypted files, backups (/var/lib/samling, /var/backups/samling).
+type samling_var_lib_t;
+files_type(samling_var_lib_t)
+
+# The port(s) the server listens on: semanage port -a -t samling_port_t -p tcp 8443
+type samling_port_t;
+corenet_port(samling_port_t)
+
+########################################
+# Local policy
+#
+
+# The Go runtime: threads, signals between its own threads, scheduling info.
+allow samling_t self:process { signal sigkill getsched setsched };
+allow samling_t self:fifo_file rw_fifo_file_perms;
+allow samling_t self:unix_stream_socket create_stream_socket_perms;
+allow samling_t self:unix_dgram_socket create_socket_perms;
+allow samling_t self:tcp_socket create_stream_socket_perms;
+allow samling_t self:udp_socket create_socket_perms;
+
+# Listen for clients.
+allow samling_t samling_port_t:tcp_socket name_bind;
+corenet_tcp_bind_generic_node(samling_t)
+# 443 and 8443 are labelled http_port_t in the distribution policy.
+corenet_tcp_bind_http_port(samling_t)
+
+# Read-only configuration.
+allow samling_t samling_etc_t:dir list_dir_perms;
+read_files_pattern(samling_t, samling_etc_t, samling_etc_t)
+read_lnk_files_pattern(samling_t, samling_etc_t, samling_etc_t)
+
+# Read-write data directory.
+manage_dirs_pattern(samling_t, samling_var_lib_t, samling_var_lib_t)
+manage_files_pattern(samling_t, samling_var_lib_t, samling_var_lib_t)
+files_search_var_lib(samling_t)
+
+# Certificates, time zones, name resolution, randomness, logging.
+miscfiles_read_generic_certs(samling_t)
+miscfiles_read_localization(samling_t)
+files_read_etc_files(samling_t)
+sysnet_dns_name_resolve(samling_t)
+dev_read_urand(samling_t)
+kernel_read_system_state(samling_t)
+kernel_read_kernel_sysctls(samling_t)
+kernel_dontaudit_read_vm_sysctls(samling_t)
+logging_send_syslog_msg(samling_t)
+
+# Optional outbound connections.
+tunable_policy(`samling_can_connect_postgresql',`
+	corenet_tcp_connect_postgresql_port(samling_t)
+')
+
+optional_policy(`
+	tunable_policy(`samling_can_connect_postgresql',`
+		postgresql_stream_connect(samling_t)
+	')
+')
+
+tunable_policy(`samling_can_network_connect',`
+	corenet_tcp_connect_all_ports(samling_t)
+')

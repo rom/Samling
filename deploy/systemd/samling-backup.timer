@@ -1,0 +1,11 @@
+# Samling - daily backup. Enable with: systemctl enable --now samling-backup.timer
+[Unit]
+Description=Daily Samling backup
+
+[Timer]
+OnCalendar=*-*-* 02:30:00
+RandomizedDelaySec=30min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

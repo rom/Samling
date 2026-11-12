@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <title>Samling</title>
+  <rect width="512" height="512" rx="112" fill="#221B3A"/>
+  <circle cx="256" cy="106" r="54" fill="#F25C54"/>
+  <circle cx="385.9" cy="181" r="54" fill="#F7931E"/>
+  <circle cx="385.9" cy="331" r="54" fill="#FFC53D"/>
+  <circle cx="256" cy="406" r="54" fill="#3DBE8B"/>
+  <circle cx="126.1" cy="331" r="54" fill="#2FA4D7"/>
+  <circle cx="126.1" cy="181" r="54" fill="#C7508F"/>
+  <circle cx="256" cy="256" r="44" fill="#FFF3DC"/>
+</svg>

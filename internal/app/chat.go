@@ -335,11 +335,10 @@ func (a *App) hMessages(c *Ctx) error {
 	}
 	limit := min(max(c.QueryInt("limit", 50), 1), 200)
 	// Ids sort by creation time, so "before" is simply the oldest id shown.
+	// No sentinel value is used for "from the newest": how punctuation sorts
+	// depends on the database collation.
 	before := c.Query("before")
-	if before == "" {
-		before = "~" // sorts after every hex id
-	}
-	msgs, err := a.messages(c, `channel_id=? AND id<? ORDER BY id DESC LIMIT ?`, []any{id, before, limit})
+	msgs, err := a.messages(c, `channel_id=? AND (?='' OR id<?) ORDER BY id DESC LIMIT ?`, []any{id, before, before, limit})
 	if err != nil {
 		return err
 	}

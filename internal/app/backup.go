@@ -361,11 +361,8 @@ type historyEntry struct {
 
 func (a *App) history(ctx context.Context, uid, before string, limit int) ([]historyEntry, error) {
 	out := []historyEntry{}
-	if before == "" {
-		before = "~" // sorts after every hex id
-	}
-	err := a.DB.Each(ctx, `SELECT id, action, res_type, res_id, summary, created_at FROM activity WHERE user_id=? AND id<? ORDER BY id DESC LIMIT ?`,
-		[]any{uid, before, limit}, func(r *sql.Rows) error {
+	err := a.DB.Each(ctx, `SELECT id, action, res_type, res_id, summary, created_at FROM activity WHERE user_id=? AND (?='' OR id<?) ORDER BY id DESC LIMIT ?`,
+		[]any{uid, before, before, limit}, func(r *sql.Rows) error {
 			var e historyEntry
 			if err := r.Scan(&e.ID, &e.Action, &e.ResType, &e.ResID, &e.Summary, &e.CreatedAt); err != nil {
 				return err

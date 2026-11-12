@@ -675,12 +675,9 @@ func (a *App) hAdminLogs(c *Ctx) error {
 		CreatedAt int64  `json:"created_at"`
 	}
 	q := `SELECT a.id, a.user_id, COALESCE(u.username,''), a.action, a.res_type, a.res_id, a.summary, a.ip, a.created_at
-		FROM activity a LEFT JOIN users u ON u.id=a.user_id WHERE a.audit=1 AND a.id < ?`
+		FROM activity a LEFT JOIN users u ON u.id=a.user_id WHERE a.audit=1 AND (?='' OR a.id < ?)`
 	before := c.Query("before")
-	if before == "" {
-		before = "~"
-	}
-	args := []any{before}
+	args := []any{before, before}
 	if act := c.Query("action"); act != "" {
 		q += ` AND a.action LIKE ?`
 		args = append(args, strings.ReplaceAll(act, "%", "")+"%")

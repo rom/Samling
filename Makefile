@@ -5,7 +5,7 @@ DEV_PORT ?= 8080
 DEV_DATA ?= ./data
 GOFLAGS_BUILD = -trimpath -ldflags "-s -w"
 
-.PHONY: help build test test-postgres check-i18n e2e vet fmt run-dev clean
+.PHONY: help build test test-postgres check-i18n shellcheck e2e vet fmt run-dev clean
 
 help: ## show this help
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-14s %s\n", $$1, $$2}'
@@ -19,6 +19,9 @@ test: ## run all tests (SQLite) and the translation check
 
 check-i18n: ## verify that the sv/en translations are complete
 	node scripts/check-i18n.mjs
+
+shellcheck: ## lint the shell scripts (needs shellcheck)
+	shellcheck scripts/*.sh tests/e2e/run.sh
 
 e2e: ## browser smoke test (needs Node.js + playwright)
 	tests/e2e/run.sh

@@ -6,8 +6,9 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const js = join(dirname(fileURLToPath(import.meta.url)), '..', 'web', 'static', 'js');
-const en = (await import(pathToFileURL(join(js, 'i18n', 'en.js')))).default;
-const sv = (await import(pathToFileURL(join(js, 'i18n', 'sv.js')))).default;
+const load = async (f) => (await import(pathToFileURL(join(js, 'i18n', f)))).default;
+const en = { ...(await load('en.js')), ...(await load('guide-en.js')) };
+const sv = { ...(await load('sv.js')), ...(await load('guide-sv.js')) };
 let bad = 0;
 const fail = (msg) => { console.error(msg); bad++; };
 

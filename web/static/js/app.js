@@ -15,9 +15,11 @@ import { People } from './views/people.js';
 import { History } from './views/history.js';
 import { Settings, PasswordForm, MfaSetup } from './views/settings.js';
 import { Admin } from './views/admin.js';
+import { Help } from './views/help.js';
+import { Tour } from './views/tour.js';
 
 const views = { home: Home, chat: Chat, documents: Documents, lists: Lists, polls: Polls, calendar: Calendar, meetings: Meetings,
-  decisions: Decisions, boards: Boards, search: Search, people: People, history: History, settings: Settings, admin: Admin };
+  decisions: Decisions, boards: Boards, search: Search, people: People, history: History, settings: Settings, admin: Admin, help: Help };
 
 const navItems = [
   ['home', 'home'], ['chat', 'chat'], ['documents', 'doc'], ['lists', 'list'], ['polls', 'poll'], ['calendar', 'calendar'],
@@ -101,6 +103,7 @@ function Shell() {
       ${navItems.map(([k, i]) => link(k, i))}
       <div class="sep"></div>
       ${admin && link('admin', 'admin')}
+      ${link('help', 'help')}
       ${link('settings', 'settings')}
       <div class="who"><span class="avatar">${(s.me.display_name || '?').slice(0, 1).toUpperCase()}</span>
         <span class="grow">${s.me.display_name}<br /><span class="small">@${s.me.username}</span></span>
@@ -108,6 +111,7 @@ function Shell() {
     </nav>
     ${open && html`<div class="scrim no-print" onClick=${() => setOpen(false)}></div>`}
     <main class="main" id="main" tabindex="-1"><${ErrorBoundary} key=${route[0]}><${View} route=${route} key=${route[0]} /><//></main>
+    <${Tour} />
   </div>`;
 }
 const hasNav = (k) => k in views;

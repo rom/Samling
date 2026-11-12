@@ -3,6 +3,8 @@
 import { html, render, Component, useState, useEffect, useRef, useMemo, useCallback } from '../vendor/htm-preact-standalone.js';
 import en from './i18n/en.js';
 import sv from './i18n/sv.js';
+import guideEn from './i18n/guide-en.js';
+import guideSv from './i18n/guide-sv.js';
 
 export { html, render, useState, useEffect, useRef, useMemo, useCallback };
 
@@ -40,7 +42,8 @@ export const can = (perm) => !!S.me && S.me.perms.includes(perm);
 
 // ---------- i18n ----------
 
-const dict = { en, sv };
+// The guide files hold the texts of the welcome tour and the online help.
+const dict = { en: { ...en, ...guideEn }, sv: { ...sv, ...guideSv } };
 export const locales = { sv: 'Svenska', en: 'English' };
 let locale = 'sv';
 try { locale = localStorage.getItem('samling.locale') || (navigator.language || 'sv').slice(0, 2); } catch { /* ignore */ }
@@ -339,6 +342,8 @@ const paths = {
   copy: 'M9 9h10v11H9zM5 15V4h10',
   globe: 'M12 21a9 9 0 100-18 9 9 0 000 18zM3 12h18M12 3c3 3.500 3 14.500 0 18M12 3c-3 3.500-3 14.500 0 18',
   mail: 'M4 6h16v12H4zM4 7l8 6 8-6',
+  help: 'M12 21a9 9 0 100-18 9 9 0 000 18zM9.500 9.500a2.500 2.500 0 114 2c-.900.600-1.500 1.200-1.500 2.300M12 17h.01',
+  key: 'M15 9a4 4 0 11-3.900 5H8v2H6v2H3v-3l6.100-6.100A4 4 0 0115 9zM16 8h.01',
 };
 export function Icon({ name, label }) {
   return html`<svg class="icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.800"
@@ -408,10 +413,13 @@ export function useForm(initial) {
 }
 
 export function Page({ title, actions, children, back }) {
+  // Every page links to the online help topic of its section.
+  const section = (location.hash.replace(/^#\/?/, '') || 'home').split('/')[0];
+  const helpLink = section !== 'help' && html`<a class="icon-btn no-print" href=${'#/help/' + encodeURIComponent(section)} aria-label=${t('nav.help')} title=${t('nav.help')}><${Icon} name="help" /></a>`;
   return html`<section class="page">
     <header class="page-head">
       ${back && html`<a class="icon-btn" href=${back} aria-label=${t('common.back')}><${Icon} name="left" /></a>`}
-      <h1>${title}</h1><div class="actions">${actions}</div>
+      <h1>${title}</h1><div class="actions">${actions}${helpLink}</div>
     </header>${children}</section>`;
 }
 

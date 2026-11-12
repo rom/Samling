@@ -35,9 +35,10 @@ jobs:
         run: make build
       - name: Example configuration is valid
         run: ./bin/samling check-config --config samling.example.yaml
-      - name: Shell scripts parse
+      - name: Lint shell scripts
         run: |
-          for f in scripts/*.sh tests/e2e/run.sh; do bash -n "$f"; done
+          shellcheck --version
+          make shellcheck
 
   postgres:
     name: API tests (PostgreSQL)

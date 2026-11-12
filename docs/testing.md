@@ -27,7 +27,7 @@ default branch, in three jobs:
 
 | Job | What it runs |
 |-----|--------------|
-| Build, vet and test (SQLite) | `go mod tidy` check, `make vet`, `make test` (Go tests + translation check), `make build`, `check-config` on the example configuration, `bash -n` on the scripts |
+| Build, vet and test (SQLite) | `go mod tidy` check, `make vet`, `make test` (Go tests + translation check), `make build`, `check-config` on the example configuration, `make shellcheck` on the shell scripts |
 | API tests (PostgreSQL) | `make test-postgres` against a PostgreSQL 16 service container |
 | Browser smoke test | `tests/e2e/run.sh` with Playwright/Chromium; screenshots and the server log are uploaded as an artifact when it fails |
 
@@ -88,7 +88,7 @@ exercised end to end. Nothing is mocked.
 | SQLite → PostgreSQL → SQLite migration via backup/restore | ok |
 | `samling decrypt` on a backup container | ok |
 | systemd units: `systemd-analyze verify`; `systemd-analyze security --offline` = 1.2 (service), 1.3 (backup) | ok |
-| All scripts: `bash -n` | ok |
+| All scripts: `shellcheck` (0.11.0), no findings | ok |
 
 ## Translations
 
@@ -148,8 +148,7 @@ After starting a development server (`make run-dev`) and creating an account:
 * **`setup.sh` end to end** and the service running under the systemd
   sandbox / seccomp filter (no systemd as init in the development
   environment). The unit was verified statically only.
-* **Let's Encrypt** issuance and renewal (`letsencrypt.sh`); `shellcheck`
-  was not available.
+* **Let's Encrypt** issuance and renewal (`letsencrypt.sh`).
 * **Accessibility audits** with assistive technology (the client uses labels, roles, focus management and keyboard alternatives, but has not been audited), and browsers other than Chromium.
 * **Load and concurrency** tests; search performance on large data sets.
 * **Upgrade paths** between schema versions (there is only one so far).

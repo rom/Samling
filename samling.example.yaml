@@ -53,6 +53,12 @@ server:
   # clients can spoof their address.                    env: SAMLING_TRUSTED_PROXY
   trusted_proxy: false
 
+  # The address people use to reach the site, e.g. https://club.example.org
+  # (no path). Passkeys are bound to its host name: set it in production and
+  # do not change it afterwards. Empty = taken from each request.
+  #                                                     env: SAMLING_PUBLIC_URL
+  public_url: ""
+
 database:
   # sqlite (default) or postgres.                       env: SAMLING_DB_DRIVER
   driver: "sqlite"
@@ -82,6 +88,10 @@ storage:
   # Largest accepted upload, in MiB.                    env: SAMLING_MAX_UPLOAD_MB
   max_upload_mb: 50
 
+  # Total size of the files one account may have uploaded, in MiB
+  # (0 = unlimited).                                    env: SAMLING_USER_QUOTA_MB
+  user_quota_mb: 2048
+
 security:
   # File holding the master key (base64, 32 bytes, mode 0600). Empty =
   # <data_dir>/master.key, which is created automatically on first start.
@@ -103,3 +113,8 @@ security:
   #   strict  refuse to start when Landlock is unavailable
   #   off     disable                                   env: SAMLING_LANDLOCK
   landlock: "on"
+
+  # Sign a session out after this many minutes without activity
+  # (0 = off; the fixed session lifetime always applies).
+  #                                                     env: SAMLING_IDLE_TIMEOUT_MINUTES
+  idle_timeout_minutes: 0

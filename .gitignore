@@ -1,7 +1,9 @@
 /bin/
+/dist/
 /data/
 /samling.yaml
 *.bak
 *.enc
 /tests/e2e/out/
 /node_modules/
+/.claude/

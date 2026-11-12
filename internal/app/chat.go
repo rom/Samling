@@ -22,24 +22,139 @@ import (
 type Event struct {
 	Type string `json:"type"`
 	ID   string `json:"id"`
+	// to, when set, addresses the event to one person only.
+	to string
 }
+
+// publishTo sends an event to the open streams of one person.
+func (h *hub) publishTo(uid string, e Event) {
+	e.to = uid
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for s := range h.clients {
+		if s.uid == uid {
+			select {
+			case s.ch <- e:
+			default:
+			}
+		}
+	}
+}
+
+// Limits on open event streams. The per-user limit keeps one account from
+// occupying all slots; when it is exceeded the account's oldest stream is
+// closed (its tab reconnects when it becomes active again).
+const (
+	maxStreams        = 2000
+	maxStreamsPerUser = 6
+)
+
+type stream struct {
+	ch   chan Event
+	uid  string
+	sess string // session id hash
+	seq  uint64
+	quit chan struct{}
+	once sync.Once
+}
+
+func (s *stream) kick() { s.once.Do(func() { close(s.quit) }) }
 
 type hub struct {
 	mu      sync.Mutex
-	clients map[chan Event]struct{}
+	clients map[*stream]struct{}
+	seq     uint64
 }
 
-func newHub() *hub { return &hub{clients: map[chan Event]struct{}{}} }
+func newHub() *hub { return &hub{clients: map[*stream]struct{}{}} }
 
 func (h *hub) publish(e Event) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	for ch := range h.clients {
+	for s := range h.clients {
 		select {
-		case ch <- e:
+		case s.ch <- e:
 		default: // slow client: drop, it will catch up on the next event
 		}
 	}
+}
+
+// add registers a stream; ok is false when the server-wide limit is reached.
+func (h *hub) add(uid, sess string) (st *stream, ok bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	var own []*stream
+	for s := range h.clients {
+		if s.uid == uid {
+			own = append(own, s)
+		}
+	}
+	for len(own) >= maxStreamsPerUser {
+		oldest := 0
+		for i, s := range own {
+			if s.seq < own[oldest].seq {
+				oldest = i
+			}
+		}
+		own[oldest].kick()
+		delete(h.clients, own[oldest])
+		own = append(own[:oldest], own[oldest+1:]...)
+	}
+	if len(h.clients) >= maxStreams {
+		return nil, false
+	}
+	h.seq++
+	st = &stream{ch: make(chan Event, 32), uid: uid, sess: sess, seq: h.seq, quit: make(chan struct{})}
+	h.clients[st] = struct{}{}
+	return st, true
+}
+
+func (h *hub) remove(st *stream) {
+	h.mu.Lock()
+	delete(h.clients, st)
+	h.mu.Unlock()
+}
+
+// kickUser closes the streams of an account, except those of one session.
+func (h *hub) kickUser(uid, keepSess string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for s := range h.clients {
+		if s.uid == uid && s.sess != keepSess {
+			s.kick()
+			delete(h.clients, s)
+		}
+	}
+}
+
+// kickSession closes the streams that belong to one session.
+func (h *hub) kickSession(sess string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for s := range h.clients {
+		if s.sess == sess {
+			s.kick()
+			delete(h.clients, s)
+		}
+	}
+}
+
+// streamValid re-checks, while a stream is open, that its session still
+// exists and its account is still active, and refreshes the account's roles.
+func (a *App) streamValid(c *Ctx) bool {
+	var expires, lastSeen int64
+	if err := a.DB.Row(c.ctx(), `SELECT expires_at, last_seen FROM sessions WHERE id_hash=?`, c.sess.idHash).Scan(&expires, &lastSeen); err != nil {
+		return false
+	}
+	if !a.sessionAlive(expires, lastSeen) {
+		return false
+	}
+	u, err := a.userByID(c.ctx(), c.U.ID)
+	if err != nil || u.Disabled || u.deletedAt != 0 {
+		return false
+	}
+	c.U = u
+	return true
 }
 
 func (a *App) hEvents(c *Ctx) error {
@@ -47,33 +162,34 @@ func (a *App) hEvents(c *Ctx) error {
 	if !ok {
 		return errBad("streaming_unsupported")
 	}
-	ch := make(chan Event, 32)
-	a.hub.mu.Lock()
-	if len(a.hub.clients) > 2000 {
-		a.hub.mu.Unlock()
+	st, ok := a.hub.add(c.U.ID, c.sess.idHash)
+	if !ok {
 		return &apiError{http.StatusServiceUnavailable, "busy"}
 	}
-	a.hub.clients[ch] = struct{}{}
-	a.hub.mu.Unlock()
-	defer func() {
-		a.hub.mu.Lock()
-		delete(a.hub.clients, ch)
-		a.hub.mu.Unlock()
-	}()
+	defer a.hub.remove(st)
 	c.W.Header().Set("Content-Type", "text/event-stream")
 	c.W.Header().Set("X-Accel-Buffering", "no")
 	fmt.Fprint(c.W, ": connected\n\n")
 	fl.Flush()
-	ping := time.NewTicker(25 * time.Second)
+	ping := time.NewTicker(a.streamPing)
 	defer ping.Stop()
 	for {
 		select {
 		case <-c.ctx().Done():
 			return nil
+		case <-st.quit: // signed out, disabled, deleted or replaced by a newer stream
+			return nil
 		case <-ping.C:
+			if !a.streamValid(c) {
+				return nil
+			}
 			fmt.Fprint(c.W, ": ping\n\n")
-		case e := <-ch:
-			if lvl, err := a.level(c.ctx(), c.U, e.Type, e.ID); err != nil || lvl < LevelRead {
+		case e := <-st.ch:
+			if e.to != "" {
+				if e.to != c.U.ID {
+					continue
+				}
+			} else if lvl, err := a.level(c.ctx(), c.U, e.Type, e.ID); err != nil || lvl < LevelRead {
 				continue
 			}
 			b, _ := json.Marshal(e)
@@ -167,7 +283,7 @@ func (a *App) hCreateChannel(c *Ctx) error {
 		return err
 	}
 	a.logAct(c, false, "channel.created", "channel", id, in.Name)
-	a.hub.publish(Event{"channel", id})
+	a.hub.publish(Event{Type: "channel", ID: id})
 	return c.JSON(map[string]string{"id": id})
 }
 
@@ -192,7 +308,7 @@ func (a *App) hUpdateChannel(c *Ctx) error {
 	if err := a.DB.Exec(c.ctx(), `UPDATE channels SET name=?, topic=?, updated_at=? WHERE id=?`, in.Name, clean(in.Topic, 300), a.unix(), id); err != nil {
 		return err
 	}
-	a.hub.publish(Event{"channel", id})
+	a.hub.publish(Event{Type: "channel", ID: id})
 	return c.OK()
 }
 
@@ -243,6 +359,19 @@ func (a *App) hOpenDM(c *Ctx) error {
 	if err := a.validateShares(c.ctx(), c.U, shares); err != nil {
 		return errBad("invalid_recipients")
 	}
+	// Somebody who has blocked direct messages from the caller cannot be
+	// drawn into a conversation by them.
+	var others []string
+	for _, id := range ids {
+		if id != c.U.ID {
+			others = append(others, id)
+		}
+	}
+	if blocked, err := a.blockedByAny(c.ctx(), c.U.ID, others); err != nil {
+		return err
+	} else if blocked {
+		return &apiError{http.StatusForbidden, "dm_blocked"}
+	}
 	sort.Strings(ids)
 	key := crypto.HashToken(strings.Join(ids, ","))
 	var id string
@@ -262,7 +391,7 @@ func (a *App) hOpenDM(c *Ctx) error {
 	if err != nil {
 		return err
 	}
-	a.hub.publish(Event{"channel", id})
+	a.hub.publish(Event{Type: "channel", ID: id})
 	return c.JSON(map[string]string{"id": id})
 }
 
@@ -286,16 +415,19 @@ type Message struct {
 	PinnedAt  int64      `json:"pinned_at"`
 	PinnedBy  string     `json:"pinned_by"`
 	Files     []FileInfo `json:"files"`
+	// ParentID is set on a comment (reply): the message it belongs to.
+	ParentID  string     `json:"parent_id"`
+	Reactions []Reaction `json:"reactions"`
 }
 
 func (a *App) messages(c *Ctx, where string, args []any) ([]Message, error) {
 	out := []Message{}
 	idx := map[string]int{}
-	err := a.DB.Each(c.ctx(), `SELECT id, channel_id, user_id, body, created_at, edited_at, deleted_at, pinned_at, pinned_by FROM messages WHERE `+where, args,
+	err := a.DB.Each(c.ctx(), `SELECT id, channel_id, user_id, body, created_at, edited_at, deleted_at, pinned_at, pinned_by, parent_id FROM messages WHERE `+where, args,
 		func(r *sql.Rows) error {
-			m := Message{Files: []FileInfo{}}
+			m := Message{Files: []FileInfo{}, Reactions: []Reaction{}}
 			var del int64
-			if err := r.Scan(&m.ID, &m.ChannelID, &m.UserID, &m.Body, &m.CreatedAt, &m.EditedAt, &del, &m.PinnedAt, &m.PinnedBy); err != nil {
+			if err := r.Scan(&m.ID, &m.ChannelID, &m.UserID, &m.Body, &m.CreatedAt, &m.EditedAt, &del, &m.PinnedAt, &m.PinnedBy, &m.ParentID); err != nil {
 				return err
 			}
 			if del != 0 {
@@ -325,6 +457,24 @@ func (a *App) messages(c *Ctx, where string, args []any) ([]Message, error) {
 			}
 			return nil
 		})
+	if err != nil {
+		return out, err
+	}
+	// Reactions, counted per emoji; "mine" marks the caller's own.
+	err = a.DB.Each(c.ctx(), `SELECT message_id, emoji, COUNT(*), SUM(CASE WHEN user_id=? THEN 1 ELSE 0 END) FROM reactions
+		WHERE message_id IN (`+ph+`) GROUP BY message_id, emoji ORDER BY MIN(emoji)`, append([]any{c.U.ID}, ids...), func(r *sql.Rows) error {
+		var mid string
+		var re Reaction
+		var mine int
+		if err := r.Scan(&mid, &re.Emoji, &re.Count, &mine); err != nil {
+			return err
+		}
+		re.Mine = mine > 0
+		if i := idx[mid]; !out[i].Deleted {
+			out[i].Reactions = append(out[i].Reactions, re)
+		}
+		return nil
+	})
 	return out, err
 }
 
@@ -365,6 +515,8 @@ func (a *App) hPostMessage(c *Ctx) error {
 	var in struct {
 		Body    string   `json:"body"`
 		FileIDs []string `json:"file_ids"`
+		// ParentID makes the message a comment on another message.
+		ParentID string `json:"parent_id"`
 	}
 	if err := c.Bind(&in); err != nil {
 		return err
@@ -379,9 +531,25 @@ func (a *App) hPostMessage(c *Ctx) error {
 	if len(in.FileIDs) > 10 {
 		return errBad("too_many_files")
 	}
+	if blocked, err := a.dmBlocked(c.ctx(), c.U.ID, id); err != nil {
+		return err
+	} else if blocked {
+		return &apiError{http.StatusForbidden, "dm_blocked"}
+	}
+	if in.ParentID != "" {
+		// A comment belongs to a message of the same channel. Comments are
+		// one level deep: a comment on a comment joins the original thread.
+		var pch, pparent string
+		if err := a.DB.Row(c.ctx(), `SELECT channel_id, parent_id FROM messages WHERE id=? AND deleted_at=0`, in.ParentID).Scan(&pch, &pparent); err != nil || pch != id {
+			return errBad("unknown_message")
+		}
+		if pparent != "" {
+			in.ParentID = pparent
+		}
+	}
 	mid, now := crypto.NewID(), a.unix()
 	err := a.DB.InTx(c.ctx(), func(tx *db.Tx) error {
-		if err := tx.Exec(c.ctx(), `INSERT INTO messages (id,channel_id,user_id,body,created_at) VALUES (?,?,?,?,?)`, mid, id, c.U.ID, in.Body, now); err != nil {
+		if err := tx.Exec(c.ctx(), `INSERT INTO messages (id,channel_id,user_id,body,created_at,parent_id) VALUES (?,?,?,?,?,?)`, mid, id, c.U.ID, in.Body, now, in.ParentID); err != nil {
 			return err
 		}
 		for _, f := range in.FileIDs {
@@ -404,7 +572,8 @@ func (a *App) hPostMessage(c *Ctx) error {
 		return err
 	}
 	a.logAct(c, false, "message.posted", "channel", id, "")
-	a.hub.publish(Event{"channel", id})
+	a.hub.publish(Event{Type: "channel", ID: id})
+	a.notifyMentions(c.ctx(), c.U, id, mid, in.Body)
 	return c.JSON(map[string]string{"id": mid})
 }
 
@@ -441,7 +610,8 @@ func (a *App) hEditMessage(c *Ctx) error {
 	if err := a.DB.Exec(c.ctx(), `UPDATE messages SET body=?, edited_at=? WHERE id=?`, in.Body, a.unix(), mid); err != nil {
 		return err
 	}
-	a.hub.publish(Event{"channel", ch})
+	a.notifyMentions(c.ctx(), c.U, ch, mid, in.Body) // people added by the edit
+	a.hub.publish(Event{Type: "channel", ID: ch})
 	return c.OK()
 }
 
@@ -458,6 +628,12 @@ func (a *App) hDeleteMessage(c *Ctx) error {
 		if err := tx.Exec(c.ctx(), `DELETE FROM message_files WHERE message_id=?`, mid); err != nil {
 			return err
 		}
+		if err := tx.Exec(c.ctx(), `DELETE FROM reactions WHERE message_id=?`, mid); err != nil {
+			return err
+		}
+		if err := tx.Exec(c.ctx(), `DELETE FROM notifications WHERE message_id=?`, mid); err != nil {
+			return err
+		}
 		return tx.Exec(c.ctx(), `UPDATE messages SET body='', deleted_at=?, pinned_at=0 WHERE id=?`, a.unix(), mid)
 	})
 	if err != nil {
@@ -465,7 +641,7 @@ func (a *App) hDeleteMessage(c *Ctx) error {
 	}
 	a.gcFiles(c.ctx())
 	a.logAct(c, author != c.U.ID, "message.deleted", "channel", ch, "")
-	a.hub.publish(Event{"channel", ch})
+	a.hub.publish(Event{Type: "channel", ID: ch})
 	return c.OK()
 }
 
@@ -485,7 +661,7 @@ func (a *App) hPin(c *Ctx) error {
 	if err := a.DB.Exec(c.ctx(), `UPDATE messages SET pinned_at=?, pinned_by=? WHERE id=?`, at, by, mid); err != nil {
 		return err
 	}
-	a.hub.publish(Event{"channel", ch})
+	a.hub.publish(Event{Type: "channel", ID: ch})
 	return c.OK()
 }
 
@@ -493,6 +669,12 @@ func (a *App) hMarkRead(c *Ctx) error {
 	id := c.Param("id")
 	if err := a.need(c, "channel", id, LevelRead); err != nil {
 		return err
+	}
+	// Reading the conversation also takes care of the mentions in it.
+	if n, err := a.DB.ExecN(c.ctx(), `UPDATE notifications SET read_at=? WHERE user_id=? AND channel_id=? AND read_at=0`, a.unix(), c.U.ID, id); err != nil {
+		return err
+	} else if n > 0 {
+		a.hub.publishTo(c.U.ID, Event{Type: "mention", ID: id})
 	}
 	return firstErr(a.DB.Exec(c.ctx(), `INSERT INTO channel_reads (user_id,channel_id,last_read_at) VALUES (?,?,?)
 		ON CONFLICT (user_id,channel_id) DO UPDATE SET last_read_at=excluded.last_read_at`, c.U.ID, id, a.unix()), c.OK)

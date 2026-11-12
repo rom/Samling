@@ -57,12 +57,18 @@ content — see D2.)
 
 ## D6 — Anonymous polls store unlinkable ballots
 
-**Decision.** For anonymous polls a ballot row has no user id and no
-timestamp; participation is recorded separately in `poll_voters`.
-**Why.** Not even a database administrator can tell who voted for what,
-while double voting is still prevented.
+**Decision.** For anonymous polls a ballot row has no user id, no timestamp
+and a fully random id; participation is recorded separately in
+`poll_voters`. Three things keep the two from being matched: no "voted"
+entry is written to the person's history, the voter list of the poll is
+rewritten in a fixed order at every vote (so row order says nothing about
+the order of voting), and the running tally is hidden until the poll closes.
+Backups list rows in key order.
+**Why.** A copy of the database or a backup must not tell who voted for
+what, while double voting is still prevented.
 **Trade-off.** An anonymous vote cannot be changed afterwards (`allow_change`
-is forced off). With very few voters the result itself can reveal votes —
+is forced off) and results are only shown after closing. Somebody who can
+watch the database between every two votes can still link them. With very few voters the result itself can reveal votes —
 that is inherent, not a storage issue.
 
 ## D7 — Search by scanning with RE2 instead of a full-text index
@@ -108,7 +114,8 @@ new machine — the realistic disaster for a club. The same format migrates
 between SQLite and PostgreSQL.
 **Trade-off.** The passphrase is mandatory and protects everything,
 including the master key; a weak passphrase is a real risk (Argon2id slows
-guessing). Restore requires the same schema version and an empty target.
+guessing). Restore requires an empty target; backups of earlier schema
+versions are accepted.
 
 ## D11 — Deleting an account anonymises it
 
@@ -161,8 +168,8 @@ to start without it.
 ## D16 — Field encryption with a blind index for PII
 
 **Decision.** E-mail, phone and TOTP secrets are encrypted with AES-256-GCM
-under a key derived from the master key, with the column name bound as
-additional data. E-mail additionally gets a keyed hash (blind index).
+under a key derived from the master key, with the column name and the row
+id bound as additional data. E-mail additionally gets a keyed hash (blind index).
 **Why.** A leaked database file or SQL dump does not expose contact details
 or MFA secrets. The blind index allows equality lookups without decrypting.
 **Trade-off.** Contact search decrypts in the application (fine at this
@@ -196,3 +203,80 @@ endpoint and does not depend on the client handling the token correctly.
 **Trade-off.** A reverse proxy must forward the `Host` header (or
 `X-Forwarded-Host`), and other web origins cannot call the API at all — by
 design; native apps use tokens.
+
+## D20 — Passkeys as a sign-in method that includes the second factor
+
+**Decision.** Passkeys are discoverable WebAuthn credentials with user
+verification required, registered after re-entering the password. Signing in
+with one needs nothing else and satisfies an MFA requirement.
+**Why.** Phishing-resistant and easier than password plus code. Requiring
+user verification makes the passkey two factors (possession and PIN or
+biometrics) in one step.
+**Trade-off.** Bound to the site's host name: they need https and a stable
+`server.public_url`, and are lost if the address changes. The password
+remains as a fallback, protected by TOTP where enabled.
+
+## D21 — Re-authentication for changes to sign-in methods
+
+**Decision.** The current password is required to change the password, to
+add or remove a second factor and to replace recovery codes; failures count
+towards the lockout and a lockout ends all sessions.
+**Why.** A stolen session must not be enough to take over the account
+permanently or to lock its owner out.
+**Trade-off.** One more password prompt in rare flows.
+
+## D22 — Uploads are opaque downloads; the client validates request paths
+
+**Decision.** Every upload is served as `application/octet-stream` with
+`attachment`. The client only issues API requests whose path consists of
+plain segments and ignores routes that do not.
+**Why.** The audit showed that an uploaded `.json` file plus a link with an
+encoded `../` in its fragment made an administrator's browser render
+attacker-chosen data and send a state-changing request to another endpoint.
+Either measure alone breaks that chain; both are kept.
+**Trade-off.** Files cannot be previewed in the browser.
+
+## D23 — Pictures are the one kind of upload shown inline
+
+D22 treats uploads as opaque downloads. Photos from the camera and profile
+pictures are only useful when they can be seen, so pictures are an explicit
+exception: the server establishes the type of an upload from its content,
+and a separate endpoint serves JPEG, PNG, GIF and WebP — nothing else —
+inline, with the real type, `nosniff` and a sandbox CSP. SVG stays a
+download because it can carry script. *Alternative considered:* re-encoding
+every picture on the server, which would also strip metadata, but needs
+image codecs (WebP) outside the standard library; the client instead
+re-encodes camera pictures to JPEG before upload, which drops metadata for
+that path.
+
+## D24 — Text recognition in the browser
+
+Scanned text is recognised on the device with a vendored Tesseract
+(WebAssembly). The picture never has to leave the device, the server needs
+no OCR software or extra privileges inside its sandbox, and no third party
+is involved. The costs are about 9 MB of static files (loaded only on use),
+slower recognition on old phones, and `'wasm-unsafe-eval'` in the CSP —
+which allows compiling WebAssembly but still forbids `eval` and inline
+script. *Alternative considered:* OCR on the server (faster, more
+languages), rejected for the reasons above.
+
+## D25 — Message formatting as plain-text marks
+
+Bold, italic and underline are stored as marks in plain text (`**`, `*`,
+`__`) and turned into elements by the client. No HTML is ever stored or
+inserted, so formatting adds no XSS surface, search keeps working on the
+text, and other clients can show the text as it is. Reactions come from a
+fixed set so that they cannot be used to inject arbitrary content, and
+comments are kept to one level to stay readable on a phone.
+
+## D26 — Mentions and links are text; access is decided when they are read
+
+A mention is the text `@username` and an internal link is the text
+`[[type:id]]`. Neither stores a name or a title, and neither grants
+anything. Who is notified is decided from the mentioned person's own access
+level when the message is written, and decided again whenever notifications
+are listed; link titles are resolved for each reader. The alternative —
+storing resolved names or titles in the message — would freeze information
+that the reader may not be allowed to see, and would go stale when things
+are renamed.
+

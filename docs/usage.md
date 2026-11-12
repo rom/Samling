@@ -174,6 +174,17 @@ their names, folders and descriptions.
   see them, and you can use them to share things with the same set of people
   quickly.
 
+### Pictures, the camera and scanned text
+
+The camera button takes a picture straight into a chat message, a document,
+or the *Pictures and files* of a list, calendar event, card, meeting, poll
+or decision. *Scan text with the camera* reads printed text (Swedish and
+English) from a picture on your own device and puts it in the message box,
+as rows in a list, or in a description. In the chat you can also format
+text (bold, italic, underline), insert emoji, react to messages and comment
+on them. Lists can name an owner per row; boards and cards can be colour
+marked. See the [manual](manual.md) for step-by-step instructions.
+
 ### History
 
 Your own activity in Samling over time: what you created, changed, voted
@@ -182,7 +193,11 @@ on, downloaded and when. Only you can see it.
 ### Settings
 
 * **Profile**: display name, e-mail, phone, and whether your contact details
-  are visible to other members.
+  are visible to other members; a profile picture (photo or ready-made
+  picture); and optional fields — address, interests, specialities, about —
+  each shown to others only if you tick it.
+* **Blocked people**: the people whose direct messages you have blocked.
+  Block someone from the conversation with them or from the member list.
 * **Language**: Swedish or English, switchable at any time.
 * **Appearance**: theme (light, dark, spring, autumn, sand, high contrast)
   and text size.
@@ -206,7 +221,10 @@ The Admin section is visible to people with administrative permissions.
   out), **unlock** after too many failed sign-ins.
 * **Reset password** (temporary, signs the person out everywhere).
 * **Two-factor**: require it for an account, or reset it when someone lost
-  their phone. There are no recovery codes.
+  their phone and has no recovery code left. Resetting removes the
+  authenticator app, the recovery codes and any passkeys.
+* **Sign out everywhere**: ends all sessions of an account at once, for
+  example when a device is lost.
 * **Delete**: erases the person's personal data, credentials and private
   content. What they contributed to shared places remains, shown as from a
   deleted user. This cannot be undone.

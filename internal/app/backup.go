@@ -94,7 +94,9 @@ func WriteBackup(ctx context.Context, d *db.DB, blobs *blob.Store, keys *crypto.
 				rows = 0
 				return err
 			}
-			err := tx.Each(ctx, `SELECT * FROM `+table, nil, func(r *sql.Rows) error {
+			// Rows are written in key order, never in the order they happen to
+			// be stored: storage order can reveal the order of events.
+			err := tx.Each(ctx, `SELECT * FROM `+table+` ORDER BY 1, 2`, nil, func(r *sql.Rows) error {
 				cols, err := r.Columns()
 				if err != nil {
 					return err
@@ -194,8 +196,10 @@ func Restore(ctx context.Context, r io.Reader, passphrase string, target Restore
 	if man.Format != 1 {
 		return 0, 0, fmt.Errorf("unsupported backup format %d", man.Format)
 	}
-	if man.SchemaVersion != db.SchemaVersion() {
-		return 0, 0, fmt.Errorf("backup has schema version %d, this binary has %d: restore with the matching release, then upgrade",
+	// Older backups can be restored: schema changes only add tables and
+	// columns with defaults. A backup from a newer release cannot.
+	if man.SchemaVersion > db.SchemaVersion() {
+		return 0, 0, fmt.Errorf("backup has schema version %d, this binary only knows %d: restore with a newer release",
 			man.SchemaVersion, db.SchemaVersion())
 	}
 	d, store, err := target(man)

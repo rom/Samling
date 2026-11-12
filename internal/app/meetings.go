@@ -125,7 +125,7 @@ func (in *meetingIn) check() (err error) {
 	if in.URL, err = cleanURL(in.URL); err != nil {
 		return err
 	}
-	if in.StartsAt <= 0 || in.EndsAt < in.StartsAt {
+	if in.StartsAt <= 0 || in.EndsAt < in.StartsAt || !validTime(in.EndsAt) {
 		return errBad("invalid_time")
 	}
 	in.Description, in.Location = clean(in.Description, 4000), clean(in.Location, 300)
@@ -192,7 +192,7 @@ func (a *App) hCreateMeeting(c *Ctx) error {
 		return err
 	}
 	a.logAct(c, false, "meeting.created", "meeting", id, in.Title)
-	a.hub.publish(Event{"meeting", id})
+	a.hub.publish(Event{Type: "meeting", ID: id})
 	return c.JSON(map[string]string{"id": id})
 }
 
@@ -239,7 +239,7 @@ func (a *App) hUpdateMeeting(c *Ctx) error {
 		return err
 	}
 	a.logAct(c, false, "meeting.updated", "meeting", id, in.Title)
-	a.hub.publish(Event{"meeting", id})
+	a.hub.publish(Event{Type: "meeting", ID: id})
 	return c.OK()
 }
 
@@ -295,7 +295,7 @@ func (a *App) hSetAgenda(c *Ctx) error {
 	if err != nil {
 		return err
 	}
-	a.hub.publish(Event{"meeting", id})
+	a.hub.publish(Event{Type: "meeting", ID: id})
 	return c.OK()
 }
 
@@ -315,7 +315,7 @@ func (a *App) hFinalizeMeeting(c *Ctx) error {
 		return err
 	}
 	a.logAct(c, true, map[bool]string{true: "meeting.reopened", false: "meeting.finalized"}[reopen], "meeting", id, "")
-	a.hub.publish(Event{"meeting", id})
+	a.hub.publish(Event{Type: "meeting", ID: id})
 	return c.OK()
 }
 
@@ -471,6 +471,9 @@ func (a *App) hCreateDecision(c *Ctx) error {
 	if in.DecidedAt <= 0 {
 		in.DecidedAt = now
 	}
+	if !validTime(in.DecidedAt) {
+		return errBad("invalid_time")
+	}
 	// Linked meeting/poll must be accessible to the author.
 	if in.MeetingID != "" {
 		if err := a.meetingEditable(c, in.MeetingID); err != nil {
@@ -488,12 +491,14 @@ func (a *App) hCreateDecision(c *Ctx) error {
 	}
 	id, body := crypto.NewID(), clean(in.Body, 20000)
 	var number string
-	err = a.DB.InTx(c.ctx(), func(tx *db.Tx) error {
+	create := func(tx *db.Tx) error {
 		ctx := c.ctx()
-		// Decisions are numbered per year: 2026-001, 2026-002, ...
+		// Decisions are numbered per year: 2026-001, 2026-002, ... The next
+		// number follows the highest one in use (never a count, which would
+		// collide if a row were ever missing).
 		year := time.Unix(in.DecidedAt, 0).UTC().Format("2006")
 		var n int
-		if err := tx.Row(ctx, `SELECT COUNT(*) FROM decisions WHERE number LIKE ?`, year+"-%").Scan(&n); err != nil {
+		if err := tx.Row(ctx, `SELECT COALESCE(MAX(CAST(SUBSTR(number, 6) AS INTEGER)), 0) FROM decisions WHERE number LIKE ?`, year+"-%").Scan(&n); err != nil {
 			return err
 		}
 		number = fmt.Sprintf("%s-%03d", year, n+1)
@@ -511,12 +516,19 @@ func (a *App) hCreateDecision(c *Ctx) error {
 			}
 		}
 		return setShares(ctx, tx, "decision", id, shares)
-	})
+	}
+	// Two decisions recorded at the same moment can pick the same number on
+	// PostgreSQL; the unique number then rejects one of them, which retries.
+	for attempt := 0; attempt < 5; attempt++ {
+		if err = a.DB.InTx(c.ctx(), create); err == nil || !isUniqueViolation(err) {
+			break
+		}
+	}
 	if err != nil {
 		return err
 	}
-	a.logAct(c, true, "decision.created", "decision", id, number+" "+in.Title)
-	a.hub.publish(Event{"decision", id})
+	a.logAct(c, true, "decision.created", "decision", id, number)
+	a.hub.publish(Event{Type: "decision", ID: id})
 	return c.JSON(map[string]string{"id": id, "number": number})
 }
 
@@ -585,9 +597,17 @@ func (a *App) hReviseDecision(c *Ctx) error {
 	if err != nil {
 		return err
 	}
-	a.logAct(c, true, "decision.revised", "decision", id, in.Status+": "+in.Comment)
-	a.hub.publish(Event{"decision", id})
+	var number string
+	_ = a.DB.Row(c.ctx(), `SELECT number FROM decisions WHERE id=?`, id).Scan(&number)
+	a.logAct(c, true, "decision.revised", "decision", id, number+" "+in.Status)
+	a.hub.publish(Event{Type: "decision", ID: id})
 	return c.OK()
+}
+
+// isUniqueViolation recognises a unique constraint error of either database.
+func isUniqueViolation(err error) bool {
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "unique constraint") || strings.Contains(msg, "duplicate key")
 }
 
 // csvSafe neutralises spreadsheet formula injection.

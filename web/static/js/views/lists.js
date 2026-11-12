@@ -1,5 +1,6 @@
-import { html, useState, t, api, act, useLoad, useLive, go, userName, fmtDate, fmtDateTime, toDateInput, fromDateInput, Icon, Modal, Field, useForm,
+import { html, useState, useStore, t, api, act, useLoad, useLive, go, userName, fmtDate, fmtDateTime, toDateInput, fromDateInput, Icon, Modal, Field, useForm,
   ShareEditor, ShareButton, SharedBadge, Page, Empty, Loading, confirmDelete } from '../lib.js';
+import { Avatar, Attachments } from '../media.js';
 
 const kinds = ['todo', 'priority', 'plain'];
 
@@ -24,6 +25,8 @@ function Detail({ id }) {
   const [text, setText] = useState('');
   const [prio, setPrio] = useState(0);
   const [due, setDue] = useState('');
+  const [owner, setOwner] = useState('');
+  const s = useStore();
   useLive(['list'], (e) => { if (e.id === id) st.reload(); });
   if (!st.data) return html`<${Page} title=${t('nav.lists')} back="#/lists"><${Loading} state=${st} /><//>`;
   const l = st.data;
@@ -33,8 +36,17 @@ function Detail({ id }) {
   const add = async (e) => {
     e.preventDefault();
     if (!text.trim()) return;
-    if (await act(() => api('POST', `/lists/${id}/items`, { text, priority: +prio, due_at: fromDateInput(due) }))) { setText(''); setDue(''); st.reload(); }
+    if (await act(() => api('POST', `/lists/${id}/items`, { text, priority: +prio, due_at: fromDateInput(due), assignee_id: owner }))) { setText(''); setDue(''); st.reload(); }
   };
+  // Scanned text becomes one item per line.
+  const addLines = async (scanned) => {
+    const lines = scanned.split('\n').map((x) => x.replace(/^\s*(?:[-*•·▪◦☐□]|\d+[.)])\s*/, '').trim()).filter(Boolean).slice(0, 100);
+    const ok = await act(async () => { for (const line of lines) await api('POST', `/lists/${id}/items`, { text: line.slice(0, 500) }); }, t('lists.scanned', { n: lines.length }));
+    st.reload();
+    return ok;
+  };
+  const people = (cur) => html`<option value="">${t('lists.no_owner')}</option>
+    ${s.users.map((u) => html`<option value=${u.id}>${u.display_name}</option>`)}${cur && !s.userMap[cur] && html`<option value=${cur}>${userName(cur)}</option>`}`;
   const patch = async (item, body) => { if (await act(() => api('PATCH', `/lists/${id}/items/${item.id}`, body))) st.reload(); };
   const remove = async (item) => { if (await act(() => api('DELETE', `/lists/${id}/items/${item.id}`))) st.reload(); };
   const del = async () => { if (confirmDelete(l.title) && await act(() => api('DELETE', '/lists/' + id))) go('lists'); };
@@ -48,8 +60,11 @@ function Detail({ id }) {
         ${items.map((it, i) => html`<li key=${it.id} class=${it.done ? 'done' : ''}>
           ${l.kind !== 'plain' && html`<input type="checkbox" checked=${it.done} disabled=${!canEdit} aria-label=${t('lists.done') + ': ' + it.text} onChange=${(e) => patch(it, { done: e.target.checked })} />`}
           ${l.kind === 'priority' && html`<span class=${'prio p' + it.priority} title=${t('lists.prio_' + it.priority)} role="img" aria-label=${t('lists.prio_' + it.priority)}></span>`}
-          <span class="text">${it.text}${it.due_at > 0 && html` <span class=${'badge ' + (!it.done && it.due_at < now ? 'danger' : '')}><${Icon} name="calendar" /> ${fmtDate(it.due_at, true)}</span>`}</span>
+          <span class="text">${it.text}${it.due_at > 0 && html` <span class=${'badge ' + (!it.done && it.due_at < now ? 'danger' : '')}><${Icon} name="calendar" /> ${fmtDate(it.due_at, true)}</span>`}
+            ${it.assignee_id && !canEdit && html` <span class="badge owner"><${Avatar} id=${it.assignee_id} size="xs" /> ${userName(it.assignee_id)}</span>`}</span>
           ${canEdit && html`
+            ${it.assignee_id && html`<${Avatar} id=${it.assignee_id} size="sm" />`}
+            <select class="owner-select" aria-label=${t('lists.owner') + ': ' + it.text} title=${t('lists.owner')} value=${it.assignee_id} onChange=${(e) => patch(it, { assignee_id: e.target.value })}>${people(it.assignee_id)}</select>
             ${l.kind === 'priority' && html`<select aria-label=${t('lists.priority')} value=${it.priority} onChange=${(e) => patch(it, { priority: +e.target.value })}>
               ${[0, 1, 2, 3].map((p) => html`<option value=${p}>${t('lists.prio_' + p)}</option>`)}</select>`}
             ${l.kind !== 'priority' && html`<button class="icon-btn" disabled=${i === 0} onClick=${() => move(it, -1)} aria-label=${t('common.move_up')}><${Icon} name="up" /></button>
@@ -61,8 +76,10 @@ function Detail({ id }) {
         ${l.kind === 'priority' && html`<select aria-label=${t('lists.priority')} value=${prio} onChange=${(e) => setPrio(e.target.value)}>
           ${[0, 1, 2, 3].map((p) => html`<option value=${p}>${t('lists.prio_' + p)}</option>`)}</select>`}
         ${l.kind !== 'plain' && html`<input type="date" value=${due} onInput=${(e) => setDue(e.target.value)} aria-label=${t('lists.due')} title=${t('lists.due')} />`}
+        <select class="owner-select" aria-label=${t('lists.owner')} title=${t('lists.owner')} value=${owner} onChange=${(e) => setOwner(e.target.value)}>${people('')}</select>
         <button class="primary"><${Icon} name="plus" /> ${t('common.add')}</button></form>`}
     </div>
+    <div class="card"><${Attachments} type="list" id=${id} canEdit=${canEdit} onText=${canEdit ? addLines : null} /></div>
   <//>`;
 }
 

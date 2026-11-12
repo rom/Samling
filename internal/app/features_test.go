@@ -32,7 +32,9 @@ func TestSecurityHeadersAndStatic(t *testing.T) {
 		}
 	}
 	csp := h.Get("Content-Security-Policy")
-	if !strings.Contains(csp, "script-src 'self'") || strings.Contains(csp, "unsafe") {
+	// 'wasm-unsafe-eval' only permits compiling WebAssembly (the on-device text
+	// recognition); inline script and eval() stay forbidden.
+	if !strings.Contains(csp, "script-src 'self' 'wasm-unsafe-eval';") || strings.Contains(csp, "'unsafe-inline'") || strings.Contains(csp, "'unsafe-eval'") {
 		t.Errorf("weak CSP: %s", csp)
 	}
 	anon.fail(401, "GET", "/api/me", nil)
@@ -126,7 +128,8 @@ func TestForcedPasswordChangeAndMFA(t *testing.T) {
 		t.Fatalf("got %q", code)
 	}
 	var setup struct{ Secret, URI, QR string }
-	bert.ok("POST", "/api/me/mfa/setup", nil, &setup)
+	bert.fail(400, "POST", "/api/me/mfa/setup", M{"password": "not the password"}) // a session alone is not enough
+	bert.ok("POST", "/api/me/mfa/setup", M{"password": testPW}, &setup)
 	if !strings.HasPrefix(setup.URI, "otpauth://totp/") || !strings.HasPrefix(setup.QR, "data:image/png;base64,") {
 		t.Fatalf("setup: %+v", setup)
 	}
@@ -924,7 +927,7 @@ func TestBackupRestore(t *testing.T) {
 		fsb, _ := blob.NewFS(filepath.Join(dir, "blobs"))
 		key := e.a.Keys.Master() // the restore command installs the key from the manifest
 		keys, _ := crypto.NewKeys(key)
-		return d, blob.NewStore(fsb, keys.Blob), nil
+		return d, blob.NewStore(fsb, keys), nil
 	}
 	ctx := context.Background()
 	if _, _, err := Restore(ctx, bytes.NewReader(bak), "the wrong passphrase", target); err == nil {
@@ -951,7 +954,7 @@ func TestBackupRestore(t *testing.T) {
 	if err := d2.Row(ctx, `SELECT phone_enc FROM users WHERE username='anna'`).Scan(&phoneEnc); err != nil {
 		t.Fatal(err)
 	}
-	if phone, _ := e.a.Keys.DecryptField(phoneEnc, "users.phone"); phone != "070-999" {
+	if phone, _ := e.a.Keys.DecryptField(phoneEnc, "users.phone", a.ID); phone != "070-999" {
 		t.Fatalf("phone: %q", phone)
 	}
 	d2.Row(ctx, `SELECT f.blob_key FROM doc_versions v JOIN files f ON f.id=v.file_id WHERE v.doc_id=?`, doc).Scan(&key)

@@ -96,6 +96,7 @@ else `./samling.yaml`. Unknown keys are errors. Validate with
 | `server.tls.key` | `SAMLING_TLS_KEY` | | | Private key (PEM) |
 | `server.insecure_http` | `SAMLING_INSECURE_HTTP` | | `false` | Serve plain HTTP (development / behind a proxy) |
 | `server.trusted_proxy` | `SAMLING_TRUSTED_PROXY` | | `false` | Trust `X-Forwarded-For` / `X-Forwarded-Proto` |
+| `server.public_url` | `SAMLING_PUBLIC_URL` | | *(from the request)* | The address people use, e.g. `https://club.example.org`. Passkeys are bound to its host name: set it, and do not change it later |
 | `database.driver` | `SAMLING_DB_DRIVER` | | `sqlite` | `sqlite` or `postgres` |
 | `database.dsn` | `SAMLING_DB_DSN` | | `<data_dir>/samling.db` | SQLite file path or PostgreSQL URL |
 | `storage.backend` | `SAMLING_STORAGE_BACKEND` | | `fs` | `fs` or `s3` |
@@ -107,6 +108,8 @@ else `./samling.yaml`. Unknown keys are errors. Validate with
 | `storage.s3.prefix` | `SAMLING_S3_PREFIX` | | | Key prefix inside the bucket |
 | `storage.s3.insecure` | `SAMLING_S3_INSECURE` | | `false` | Plain HTTP to the S3 endpoint |
 | `storage.max_upload_mb` | `SAMLING_MAX_UPLOAD_MB` | | `50` | Largest upload (MiB) |
+| `storage.user_quota_mb` | `SAMLING_USER_QUOTA_MB` | | `2048` | Total size of the files one account may have uploaded (MiB, 0 = unlimited) |
+| `security.idle_timeout_minutes` | `SAMLING_IDLE_TIMEOUT_MINUTES` | | `0` | Sign out after this long without activity (0 = off) |
 | `security.master_key_file` | `SAMLING_MASTER_KEY_FILE` | | `<data_dir>/master.key` | Master key file (a systemd credential named `master.key` takes precedence) |
 | `security.min_password_length` | `SAMLING_MIN_PASSWORD_LENGTH` | | `12` | Minimum 8 |
 | `security.session_hours` | `SAMLING_SESSION_HOURS` | | `336` | Session lifetime |
@@ -288,7 +291,7 @@ chown -R samling:samling /var/lib/samling && systemctl start samling
 
 Run `restore` as root as shown. Restore
 refuses a non-empty database, a wrong passphrase, a modified file or a
-different schema version. Everyone has to sign in again afterwards.
+backup made by a newer release (older backups are accepted and upgraded). Everyone has to sign in again afterwards.
 
 **Disaster recovery test.** Do the procedure above on a spare machine at
 least once; an untested backup is a hope, not a backup.
@@ -376,3 +379,33 @@ make run-dev DEV_PORT=8080
 ```
 
 The last command serves plain HTTP on `127.0.0.1:8080` with data in `./data`.
+
+## Making a release
+
+Releases are tagged from the default branch (`rom`) and built by GitHub
+Actions.
+
+```bash
+make tag VERSION=v1.2.3
+```
+
+```bash
+make publish VERSION=v1.2.3
+```
+
+* `make tag` creates the annotated tag `v1.2.3` on the current commit. It
+  refuses a dirty working tree, an existing tag, a version that is not of
+  the form `vX.Y.Z` (optionally `-rc.1` and the like), and a commit that is
+  not on `origin/rom`.
+* `make publish` pushes the tag. The workflow `.github/workflows/release.yml`
+  then checks that the tag is on the default branch, runs the tests, builds
+  the archives and publishes a GitHub release with generated notes. A
+  version with a suffix (`v1.2.3-rc.1`) is published as a pre-release.
+* `make release` builds the same archives locally into `dist/`
+  (`samling-<version>-linux-amd64.tar.gz`, `…-arm64.tar.gz` and
+  `SHA256SUMS`), without tagging or publishing anything. Each archive holds
+  the static binary — which reports the version with `samling version` —
+  the example configuration, `scripts/`, `deploy/` and the documentation.
+
+Verify a download with `sha256sum -c SHA256SUMS` before installing it.
+

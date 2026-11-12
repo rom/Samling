@@ -90,7 +90,7 @@ func newEnv(t *testing.T) *env {
 		t.Fatal(err)
 	}
 	static := fstest.MapFS{"index.html": {Data: []byte("<html>samling</html>")}}
-	a, err := New(cfg, openTestDB(t, dir), blob.NewStore(fsb, keys.Blob), keys, static, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	a, err := New(cfg, openTestDB(t, dir), blob.NewStore(fsb, keys), keys, static, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}

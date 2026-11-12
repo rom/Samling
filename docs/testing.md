@@ -73,6 +73,49 @@ exercised end to end. Nothing is mocked.
 | `TestBackupRestore` | Backup is encrypted, wrong passphrase and tampering rejected, restore into a fresh installation reproduces rows, PII and file contents, restore into a non-empty database refused, encrypted member export, personal data export |
 | `TestPIIEncryptedAtRest` | E-mail, phone and passwords not in clear in the database, session tokens stored hashed, contact visibility in the directory |
 
+### `internal/app/social_test.go`
+
+| Test | Covers |
+|------|--------|
+| `TestProfileFieldsAndAvatar` | Optional profile fields: per-field sharing, visibility to others / self / account managers, encryption at rest, search; avatar validation; uploads typed by content; inline pictures only for real pictures |
+| `TestListOwnersAndBoardColours` | Task owner on list items; colour marks on boards and cards, with validation |
+| `TestBlockingDirectMessages` | Blocking stops messages, reactions and new (also group) conversations; channels unaffected; unblocking |
+| `TestCommentsAndReactions` | Comments (one level, same channel, write access); reactions (fixed set, toggle, counts, read access is enough, removed with the message) |
+| `TestMentionsRespectAccess` | Mentions notify only people who can read the conversation (channels, direct messages), once per message, also via edits and comments; hidden again when access is withdrawn or the message is deleted; other people's notifications cannot be marked |
+| `TestInternalLinksResolveOnlyWhatTheReaderMaySee` | Link titles only for readable items; unreadable, missing and malformed references are omitted alike |
+| `TestAttachments` | Attachments on lists, cards, events, polls, decisions: access levels, own uploads only, file access follows the item, clean-up |
+
+### Security regression tests (`internal/app/security_test.go`)
+
+One test per finding of the security audit, plus the sign-in features added with the fixes.
+
+| Test | Guards against |
+|------|----------------|
+| `TestSecICSImportIsLinear` | Calendar files that took quadratic time to parse; over-long lines |
+| `TestSecOneBallotPerVoter` | More than one ballot per voter under parallel requests |
+| `TestSecTimesAreBounded` | Out-of-range times breaking queries for everyone |
+| `TestSecLockoutCountsParallelAttempts` | Parallel wrong passwords under-counting towards the lockout |
+| `TestSecDecisionsSurviveUserDeletion` | Decisions lost, or numbering broken, when an account is deleted |
+| `TestSecStreamLimitPerUser` | One account occupying all event streams |
+| `TestSecStreamEndsWithSession` | Event streams outliving logout, disabling, deletion, password reset or sign-out |
+| `TestSecReauthentication` | Guessing the password or changing sign-in methods with only a session |
+| `TestSecAuditLogHasNoDecisionContent` | Private decision titles and comments in the audit log |
+| `TestSecRolesKeepAnAdministrator` | Role changes removing the last administrator |
+| `TestSecStorageQuota` | Unlimited uploads by one account |
+| `TestSecNoInjectionThroughImport` | Injected lines in calendar exports; control characters in stored text |
+| `TestSecNamesAndEmail` | Duplicate or disguised display names; e-mail values carrying `mailto:` parameters |
+| `TestSecDownloadsAreOpaque` | Uploads served with a script, style or JSON content type |
+| `TestSecCiphertextsAreBoundToTheirRecord` | Moving encrypted fields between rows; swapping stored files |
+| `TestSecLegacyDataIsUpgraded` | Data of the first release becoming unreadable after the format changes |
+| `TestSecAnonymousBallotsUnlinkable` | Matching anonymous ballots to voters from the database or a backup |
+| `TestSecNoHiddenSharesByModerators` | A share the owner of an item can neither see nor remove |
+| `TestSecRecoveryCodes` | Recovery codes: single use, hashed, replaceable, removed with MFA |
+| `TestSecIdleTimeout` | Idle sessions staying valid; background requests extending them |
+| `TestSecSignOutEverywhere` | Sessions surviving "sign out everywhere" (by the user or an administrator) |
+| `TestSecPasskeyEndpoints` | Passkey registration without the password; reusable or mixed-up challenges |
+
+The browser test additionally registers a passkey on a virtual authenticator and signs in with it, signs in with a recovery code, checks that crafted links (`#/lists/..%2F…`) cannot steer requests to another endpoint, steps through the welcome tour, and opens the online help.
+
 ## Verified manually during development
 
 | Check | Result |
@@ -118,7 +161,15 @@ ranked, vote, close), calendar (create, .ics export and import), meetings
 decision from a poll, history), kanban (card, move buttons, drag and drop,
 columns), groups (shared and private), search (wildcard, invalid regex),
 personal history, settings (theme, text size, language, MFA enrolment
-screen, persistence after reload), encrypted backup download, and that the
+screen, persistence after reload), message formatting (and that markup in a
+message stays text), emoji, reactions, comments, a photo taken with a (fake)
+camera, text recognition of a picture into list rows, task owners, colour
+marks, attachments on a card, profile fields and picture, blocking,
+internal links (picker, pasted address, link without access, link from a
+meeting to a board), mentions (suggestions while typing, the Mentions page
+of the mentioned person, and no notice for a mention in somebody else's
+direct conversation),
+encrypted backup download, and that the
 member sees shared but not private content and no administration menu. It
 fails on any uncaught JavaScript error. It needs Node.js with the
 `playwright` package; it is not part of `make test`.

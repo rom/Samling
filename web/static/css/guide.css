@@ -1,0 +1,67 @@
+/* Styles of the welcome tour and the online help. Colours come from the theme
+   variables in app.css, so every theme works. */
+
+/* ----- welcome tour ----- */
+.tour { position: fixed; inset: 0; z-index: 60; }
+.tour.centred { display: flex; align-items: center; justify-content: center; padding: 1rem; background: rgba(8, 12, 20, .62); overflow-y: auto; }
+.tour-dim { position: absolute; inset: 0; display: block; fill: rgba(8, 12, 20, .62); }
+.tour-ring { position: absolute; border-radius: 8px; outline: 3px solid var(--nav-text); outline-offset: 1px; pointer-events: none; }
+.tour-card { position: absolute; width: min(25rem, calc(100vw - 2rem)); max-height: calc(100vh - 24px); max-height: calc(100dvh - 24px); overflow-y: auto;
+  background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 14px; box-shadow: 0 20px 50px rgba(0, 0, 0, .35);
+  padding: 1.2rem 1.3rem 1rem; animation: tour-in .18s ease-out; }
+.tour.centred .tour-card { position: relative; margin: auto; }
+:root[data-theme="contrast"] .tour-card { border-width: 2px; }
+.tour-arrow { position: absolute; width: 14px; height: 14px; background: var(--surface); border-left: 1px solid var(--border);
+  border-bottom: 1px solid var(--border); transform: rotate(45deg); }
+.tour-art { display: flex; align-items: center; gap: .8rem; margin-bottom: .7rem; }
+.tour-art img { display: block; border-radius: 12px; }
+.tour-icon { width: 3rem; height: 3rem; border-radius: 50%; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); flex: none; }
+.tour-icon .icon { width: 26px; height: 26px; }
+.tour-badges { display: inline-flex; align-items: center; gap: .4rem; color: var(--muted); flex-wrap: wrap; }
+.tour-count { color: var(--muted); font-size: .82rem; margin: 0 0 .15rem; }
+.tour-card h2 { font-size: 1.25rem; margin-bottom: .4rem; }
+.tour-card #tour-text { margin: 0; }
+.tour-dots { display: flex; gap: .35rem; margin: 1rem 0 .8rem; }
+.tour-dots i { width: .5rem; height: .5rem; border-radius: 50%; background: var(--border); }
+.tour-dots i.past { background: var(--muted); }
+.tour-dots i.on { background: var(--accent); width: 1.3rem; border-radius: 999px; }
+.tour-buttons { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.tour-buttons button.link { padding: .45rem .3rem; min-height: 2.5rem; }
+@keyframes tour-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+:root[data-motion="reduce"] .tour-card { animation: none; }
+@media (prefers-reduced-motion: reduce) { .tour-card { animation: none; } }
+@media print { .tour { display: none; } }
+
+/* ----- online help ----- */
+.help-intro { display: flex; gap: 1rem; align-items: flex-start; margin-bottom: 1rem; }
+.help-intro img { border-radius: 12px; flex: none; }
+.help-intro p { margin: 0 0 .7rem; }
+.help-search { position: relative; margin-bottom: 1.2rem; }
+.help-search .icon { position: absolute; left: .75rem; top: 50%; transform: translateY(-50%); color: var(--muted); pointer-events: none; }
+.help-search input { width: 100%; padding-left: 2.5rem; min-height: 2.8rem; }
+.help-group { margin-bottom: 1.4rem; }
+.help-group > h2, .help-related > h2 { font-size: .82rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 .5rem .2rem; }
+.rows > a.help-topic { align-items: center; }
+.help-topic > .icon { color: var(--muted); }
+.help-ico { width: 2.3rem; height: 2.3rem; border-radius: 10px; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); flex: none; }
+.help-article { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow);
+  padding: 1.2rem 1.4rem 1.4rem; max-width: 46rem; }
+.help-article .help-lead { font-size: 1.08rem; margin: 0 0 .4rem; }
+.help-article h2 { margin: 1.4rem 0 .4rem; }
+.help-article p { margin: .5rem 0; }
+.help-article ol, .help-article ul { margin: .4rem 0; padding-left: 1.5rem; }
+.help-article li { margin: .3rem 0; }
+.help-article ol > li::marker { font-weight: 700; color: var(--accent); }
+.help-ui { font-weight: 600; background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 0 .3rem; white-space: nowrap; }
+.help-note { display: flex; gap: .6rem; background: var(--accent-soft); border-radius: 8px; padding: .6rem .8rem; }
+.help-note > .icon { color: var(--accent); margin-top: .15rem; }
+.help-article > p:last-child { margin: 1.4rem 0 0; }
+.help-related { max-width: 46rem; margin-top: 1.6rem; }
+.help-related > p { margin-top: .9rem; }
+@media (max-width: 900px) {
+  .help-article { padding: 1rem 1rem 1.2rem; }
+  .help-ui { white-space: normal; }
+}
+@media print {
+  .help-article { border: none; box-shadow: none; padding: 0; }
+}

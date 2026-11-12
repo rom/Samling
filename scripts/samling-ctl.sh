@@ -54,8 +54,12 @@ install -m 0400 -o "$SAMLING_USER" "$SAMLING_KEY" "$cred_dir/master.key"
 chown "$SAMLING_USER" "$cred_dir"
 chmod 0500 "$cred_dir"
 
-runuser -u "$SAMLING_USER" -- env \
-	CREDENTIALS_DIRECTORY="$cred_dir" \
-	SAMLING_CONFIG="$SAMLING_CONFIG" \
-	${SAMLING_BACKUP_PASSPHRASE:+SAMLING_BACKUP_PASSPHRASE="$SAMLING_BACKUP_PASSPHRASE"} \
-	"$SAMLING_BIN" "$@"
+# The settings are handed over in the environment, which runuser passes on.
+# Nothing secret is put on a command line: arguments are visible to every
+# local user in the process list, the environment is not.
+export CREDENTIALS_DIRECTORY="$cred_dir"
+export SAMLING_CONFIG
+if [ -n "${SAMLING_BACKUP_PASSPHRASE:-}" ]; then
+	export SAMLING_BACKUP_PASSPHRASE
+fi
+runuser -u "$SAMLING_USER" -- "$SAMLING_BIN" "$@"

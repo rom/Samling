@@ -11,7 +11,8 @@ boards, with role based access control and a strong focus on security.
 | [design-decisions.md](design-decisions.md) | Why things are built the way they are, with trade-offs |
 | [security.md](security.md) | Threat model, authentication, authorisation, encryption, hardening |
 | [deployment.md](deployment.md) | Installation, configuration reference, TLS, PostgreSQL, S3, backup/restore, CLI |
-| [usage.md](usage.md) | Guide for members and administrators |
+| [manual.md](manual.md) | **User manual with screenshots** |
+| [usage.md](usage.md) | Reference guide for members and administrators |
 | [api.md](api.md) | REST API reference (also used by native apps) |
 | [mobile.md](mobile.md) | Phones and tablets: PWA today, native apps next |
 | [testing.md](testing.md) | How to run the tests and what they cover |

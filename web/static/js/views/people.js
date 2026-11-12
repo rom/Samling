@@ -1,4 +1,7 @@
-import { html, useState, useStore, t, api, act, loadDirectory, go, can, userName, roleName, Icon, Modal, Field, useForm, Page, Empty, Badge, confirmDelete } from '../lib.js';
+import { html, useState, useStore, t, api, act, loadDirectory, go, can, userName, roleName, setBlocked, Icon, Modal, Field, useForm, Page, Empty, Badge, confirmDelete } from '../lib.js';
+import { Avatar } from '../media.js';
+
+export const profileFields = ['address', 'interests', 'specialities', 'about'];
 
 function GroupForm({ group, scope, onClose }) {
   const s = useStore();
@@ -33,7 +36,7 @@ export function People() {
   const [q, setQ] = useState('');
   const [modal, setModal] = useState(null);
   const roles = Object.fromEntries(s.roles.map((r) => [r.id, r]));
-  const people = s.users.filter((u) => (u.display_name + ' ' + u.username + ' ' + (u.email || '') + ' ' + (u.phone || '')).toLowerCase().includes(q.toLowerCase()));
+  const people = s.users.filter((u) => [u.display_name, u.username, u.email || '', u.phone || '', ...Object.values(u.profile || {})].join(' ').toLowerCase().includes(q.toLowerCase()));
   const dm = async (u) => { const r = await act(() => api('POST', '/dm', { user_ids: [u.id] })); if (r) go('chat', r.id); };
   const done = (changed) => { setModal(null); if (changed) loadDirectory(); };
   const groupCard = (g) => html`<div class="card" key=${g.id}><div class="row"><h3 class="grow">${g.name}</h3>
@@ -48,12 +51,17 @@ export function People() {
     ${tab === 'people' && html`
       <input type="search" style=${{ width: '100%', marginBottom: '1rem' }} placeholder=${t('people.search')} aria-label=${t('people.search')} value=${q} onInput=${(e) => setQ(e.target.value)} />
       ${people.length === 0 ? html`<${Empty} icon="people" text=${t('common.nothing')} />` : html`<div class="rows">${people.map((u) => html`<div key=${u.id}>
-        <span class="avatar" aria-hidden="true">${u.display_name.slice(0, 1).toUpperCase()}</span>
+        <${Avatar} user=${u} size="md" />
         <span class="grow"><b>${u.display_name}</b> <span class="muted small">@${u.username}</span>
           ${u.roles.filter((r) => r !== 'member' && roles[r]).map((r) => html` <${Badge} kind="info">${roleName(roles[r])}<//>`)}<br />
-          <span class="small">${u.email && html`<a href=${'mailto:' + u.email}><${Icon} name="mail" /> ${u.email}</a> `}${u.phone && html`<a href=${'tel:' + u.phone.replace(/[^\d+]/g, '')}>${u.phone}</a>`}
-            ${!u.email && !u.phone && html`<span class="muted">${t('people.no_contact')}</span>`}</span></span>
-        ${u.id !== s.me.id && html`<button onClick=${() => dm(u)}><${Icon} name="chat" /> <span class="sr-only">${u.display_name}: </span>${t('people.message')}</button>`}
+          <span class="small">${u.email && html`<a href=${'mailto:' + encodeURIComponent(u.email).replace(/%40/g, '@')}><${Icon} name="mail" /> ${u.email}</a> `}${u.phone && html`<a href=${'tel:' + u.phone.replace(/[^\d+]/g, '')}>${u.phone}</a>`}
+            ${!u.email && !u.phone && html`<span class="muted">${t('people.no_contact')}</span>`}</span>
+          ${profileFields.filter((k) => (u.profile || {})[k]).map((k) => html`<div class="small profile-line" key=${k}><span class="muted">${t('profile.' + k)}:</span> ${u.profile[k]}</div>`)}
+          ${s.blocks.includes(u.id) && html`<div class="small"><${Badge} kind="warn"><${Icon} name="block" /> ${t('block.badge')}<//></div>`}</span>
+        ${u.id !== s.me.id && html`<span class="row person-actions">
+          <button onClick=${() => dm(u)}><${Icon} name="chat" /> <span class="sr-only">${u.display_name}: </span>${t('people.message')}</button>
+          <button class="icon-btn" aria-pressed=${s.blocks.includes(u.id)} aria-label=${u.display_name + ': ' + (s.blocks.includes(u.id) ? t('block.undo') : t('block.do'))}
+            title=${s.blocks.includes(u.id) ? t('block.undo') : t('block.do')} onClick=${() => setBlocked(u.id, !s.blocks.includes(u.id))}><${Icon} name="block" /></button></span>`}
       </div>`)}</div>`}`}
     ${tab === 'groups' && html`
       <div class="row" style=${{ marginBottom: '.6rem' }}><h2 class="grow">${t('people.global_groups')}</h2>

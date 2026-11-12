@@ -170,7 +170,7 @@ func open(cfg *config.Config) (*runtime, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &runtime{cfg, keys, d, blob.NewStore(backend, keys.Blob)}, nil
+	return &runtime{cfg, keys, d, blob.NewStore(backend, keys)}, nil
 }
 
 func (rt *runtime) app(log *slog.Logger) (*app.App, error) {
@@ -384,10 +384,16 @@ func adminPasswd(args []string) error {
 		return err
 	}
 	if *resetMFA {
-		if err := rt.db.Exec(context.Background(), `UPDATE users SET totp_enabled=0, totp_secret_enc='', totp_last_step=0 WHERE id=?`, id); err != nil {
-			return err
+		for _, q := range []string{
+			`UPDATE users SET totp_enabled=0, totp_secret_enc='', totp_last_step=0 WHERE id=?`,
+			`DELETE FROM recovery_codes WHERE user_id=?`,
+			`DELETE FROM passkeys WHERE user_id=?`,
+		} {
+			if err := rt.db.Exec(context.Background(), q, id); err != nil {
+				return err
+			}
 		}
-		fmt.Println("Two-step verification was removed for the account.")
+		fmt.Println("Two-step verification (authenticator app, recovery codes and passkeys) was removed for the account.")
 	}
 	fmt.Printf("Password for %q was reset; all sessions were signed out.\n", *username)
 	if generated {
@@ -490,7 +496,7 @@ func restore(args []string) error {
 		if err != nil {
 			return nil, nil, err
 		}
-		return d, blob.NewStore(backend, keys.Blob), nil
+		return d, blob.NewStore(backend, keys), nil
 	})
 	if d != nil {
 		defer d.Close()

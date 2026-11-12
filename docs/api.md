@@ -65,11 +65,24 @@ report the caller's level (1 read, 2 write, 3 manage).
 | POST | `/api/auth/login` | public | Sign in |
 | POST | `/api/auth/logout` | signed in (limited) | Sign out, revoke the session |
 | GET | `/api/me` | signed in (limited) | Profile, roles, permissions, CSRF token, pending step, organisation name, limits |
-| PATCH | `/api/me` | signed in (limited) | Update display name, e-mail, phone, contact visibility, locale (`sv`/`en`), settings |
+| PATCH | `/api/me` | signed in (limited) | Update display name, e-mail, phone, contact visibility, locale (`sv`/`en`), settings, `avatar` (`""`, `preset:1`–`preset:24`, or `file:<id>` of an own uploaded picture), `profile` (`address`, `interests`, `specialities`, `about`) and `profile_shared` (which of those fields other members may see) |
+| GET | `/api/notifications` | signed in | The caller's mentions: `unread` and the latest 50 `items` (`actor_id`, `channel_id`, `channel` name, `message_id`, `snippet`, `read`). Only mentions in conversations the caller can read at the time of the request |
+| POST | `/api/notifications/read` | signed in | Mark as read: `ids`, or all when empty |
+| POST | `/api/links` | signed in | Resolve internal links: `refs` (`type`: channel, document, list, poll, event, meeting, decision, board; `id`), at most 100. Returns `type`, `id`, `title` for those the caller can read; unreadable and missing ones are omitted alike |
+| GET | `/api/me/blocks` | signed in | Ids of the people whose direct messages the caller has blocked |
+| PUT / DELETE | `/api/me/blocks/{id}` | signed in | Block / stop blocking direct messages from a person |
 | POST | `/api/me/password` | signed in (limited) | Change password (`current`, `new`) |
-| POST | `/api/me/mfa/setup` | signed in (limited) | Start TOTP enrolment: secret, `otpauth://` URI, QR code (PNG data URI) |
+| POST | `/api/me/mfa/setup` | signed in (limited) | Start TOTP enrolment (body: `password`): secret, `otpauth://` URI, QR code (PNG data URI) |
 | POST | `/api/me/mfa/enable` | signed in (limited) | Confirm enrolment with a code |
 | POST | `/api/me/mfa/disable` | signed in | Disable MFA (password required; refused when MFA is required) |
+| POST | `/api/me/mfa/recovery-codes` | signed in | Replace the recovery codes (body: `password`); returns the new codes once |
+| GET | `/api/me/passkeys` | signed in (limited) | The caller's passkeys |
+| POST | `/api/me/passkeys/begin` | signed in (limited) | Start a passkey registration (body: `password`): `ceremony` id and WebAuthn creation `options` |
+| POST | `/api/me/passkeys/finish` | signed in (limited) | Complete it: `ceremony`, `name`, `credential` (the browser's attestation response as JSON) |
+| POST | `/api/me/passkeys/{id}/delete` | signed in | Remove a passkey (body: `password`) |
+| POST | `/api/me/sessions/end-others` | signed in | Sign out everywhere else |
+| POST | `/api/auth/passkey/begin` | public | Start a passkey sign-in: `ceremony` id and WebAuthn request `options` |
+| POST | `/api/auth/passkey/finish` | public | Complete it: `ceremony`, `credential` (assertion response), optional `token: true`; answers like the password login |
 | GET | `/api/me/history` | signed in | Own activity (`?before=<id of the oldest entry shown>` for paging, 200 per page) |
 | GET | `/api/me/export` | signed in | Download own personal data (JSON) |
 | GET | `/api/events` | signed in | Server-Sent Events stream of change notifications |
@@ -78,7 +91,7 @@ report the caller's level (1 read, 2 write, 3 manage).
 
 | Method | Path | Access | Purpose |
 |--------|------|--------|---------|
-| GET | `/api/users` | signed in | Member directory (contact details only when visible) |
+| GET | `/api/users` | signed in | Member directory: `avatar`; contact details and `profile` fields only when their owner shares them (always for the person and for `users.manage`) |
 | GET | `/api/groups` | signed in | Global groups and own local groups, with members |
 | POST | `/api/groups` | signed in; `roles.manage` for scope `global` | Create a group (`scope`: `global` or `local`) |
 | PUT | `/api/groups/{id}` | owner (local) / `roles.manage` (global) | Rename, set members |
@@ -97,6 +110,7 @@ report the caller's level (1 read, 2 write, 3 manage).
 | PATCH | `/api/admin/users/{id}` | perm `users.manage` | Rename, display name, e-mail, `disabled`, `mfa_required`, `reset_mfa`, `unlock`, `roles` (needs `roles.manage`) |
 | POST | `/api/admin/users/{id}/password` | perm `users.manage` | Set a temporary password |
 | DELETE | `/api/admin/users/{id}` | perm `users.manage` | Delete (anonymise) an account |
+| POST | `/api/admin/users/{id}/sign-out` | perm `users.manage` | End every session of the account |
 | GET | `/api/admin/logs` | perm `logs.view` | Audit log (`?before=<entry id>`, `?action=` prefix, `?user=`) |
 | POST | `/api/admin/backup` | perm `backup.manage` | Stream an encrypted backup (`{"passphrase"}`) |
 | POST | `/api/admin/export` | perm `backup.manage` and `users.manage` | Members CSV (`{"kind": "members", "passphrase": optional}`) |
@@ -118,7 +132,8 @@ report the caller's level (1 read, 2 write, 3 manage).
 | DELETE | `/api/channels/{id}` | level manage | Delete channel and messages |
 | POST | `/api/dm` | signed in | Open (or find) a direct conversation (`user_ids`) |
 | GET | `/api/channels/{id}/messages` | level read | Messages, oldest first (`?before=<id of the oldest message shown>`, `?limit=` ≤ 200) |
-| POST | `/api/channels/{id}/messages` | level write | Post (`body`, `file_ids`) |
+| POST | `/api/channels/{id}/messages` | level write | Post (`body`, `file_ids`, optional `parent_id` to comment on a message in the same channel; comments are one level deep). `403 dm_blocked` in a direct conversation where a participant has blocked the caller. The body may contain the marks `**bold**`, `*italic*`, `__underline__`, internal links `[[type:id]]` and mentions `@username`; all are stored as written. Mentioned people who can read the channel get a notification (once per message; an edit notifies people it adds) |
+| POST | `/api/messages/{id}/reactions` | level read | Toggle the caller's reaction (`emoji`, one of a fixed set). Messages are returned with `parent_id` and `reactions` (`emoji`, `count`, `mine`) |
 | GET | `/api/channels/{id}/pins` | level read | Pinned messages |
 | POST | `/api/channels/{id}/read` | level read | Mark as read |
 | PATCH | `/api/messages/{id}` | author | Edit |
@@ -130,7 +145,11 @@ report the caller's level (1 read, 2 write, 3 manage).
 | Method | Path | Access | Purpose |
 |--------|------|--------|---------|
 | POST | `/api/files` | signed in | Upload (`multipart/form-data`, field `file`); returns id, name, size |
-| GET | `/api/files/{id}` | uploader, or read access to a channel/document that references it | Download |
+| GET | `/api/files/{id}` | uploader, or read access to a channel/document/attachment that references it | Download |
+| GET | `/api/files/{id}/image` | as above; profile pictures: signed in | The file shown inline, only if its content is a JPEG, PNG, GIF or WebP picture (otherwise 404) |
+| GET | `/api/attachments/{type}/{id}` | level read | Files attached to a `list`, `event`, `card`, `meeting`, `poll` or `decision` (a card follows its board) |
+| POST | `/api/attachments/{type}/{id}` | level write (`poll`, `decision`: manage) | Attach an own upload (`file_id`), at most 20 per item |
+| DELETE | `/api/attachments/{type}/{id}/{file}` | as for POST | Remove an attachment |
 | GET | `/api/documents` | signed in | Visible documents |
 | POST | `/api/documents` | signed in | Create from an uploaded file (`file_id`, `name`, `folder`, `description`, `shares`) |
 | GET | `/api/documents/{id}` | level read | Details and version history |
@@ -152,6 +171,8 @@ report the caller's level (1 read, 2 write, 3 manage).
 | POST | `/api/lists/{id}/items` | level write | Add item (`text`, `priority` 0–3, `due_at`) |
 | PATCH | `/api/lists/{id}/items/{item}` | level write | Update (`text`, `done`, `priority`, `due_at`, `position`) |
 | DELETE | `/api/lists/{id}/items/{item}` | level write | Remove item |
+
+List items accept and return `assignee_id` (the person who owns the task; empty for none).
 
 ### Polls
 
@@ -199,7 +220,7 @@ report the caller's level (1 read, 2 write, 3 manage).
 | Method | Path | Access | Purpose |
 |--------|------|--------|---------|
 | GET | `/api/boards` | signed in | Visible boards |
-| POST | `/api/boards` | signed in | Create (`title`, `description`, `columns`, `shares`) |
+| POST | `/api/boards` | signed in | Create (`title`, `description`, `columns`, `shares`, optional `color`: `red`, `orange`, `yellow`, `green`, `teal`, `blue`, `purple`, `pink`, `gray` or empty; cards take the same `color` field) |
 | GET | `/api/boards/{id}` | level read | Board with columns and cards |
 | PATCH | `/api/boards/{id}` | level manage | Rename, describe |
 | DELETE | `/api/boards/{id}` | level manage | Delete |
@@ -237,6 +258,10 @@ event carries no content — fetch the resource to get the new state. A
 comment line (`: ping`) is sent every 25 seconds. Reconnect on disconnect.
 Native apps can use the same stream with the bearer header.
 
+Besides the resource events, a stream receives `{"type":"mention","id":"<channel id>"}` when its own account is mentioned or its mentions are marked as read. These are sent to that account's streams only.
+
+`GET /api/calendar?event=<id>` returns just that event (if readable), which is what a link to an event opens.
+
 ## Rate limits
 
 3000 requests per minute per client address for the API as a whole, 30 per
@@ -250,3 +275,19 @@ State-changing requests from browsers must come from the server's own origin
 otherwise the answer is 403 `cross_origin`. Requests that authenticate with a
 bearer token are exempt, as are clients that send no `Origin` header at all.
 No CORS headers are sent.
+
+## Sign-in details
+
+* `POST /api/auth/login` takes `username`, `password` and, when two-step
+  verification is on, `code`: the 6-digit TOTP code or a recovery code.
+  401 `mfa_required` asks for the code; 401 `passkey_required` means the
+  account's only second factor is a passkey.
+* `POST /api/me/mfa/enable` answers with `recovery_codes` (shown once).
+* Changing the password, enrolling or removing a second factor and
+  replacing recovery codes require the current password; 429
+  `account_locked` is returned while the account is locked.
+* When `security.idle_timeout_minutes` is set, web clients mark requests
+  that follow real interaction with `X-User-Active: 1`; only those (and
+  token sessions) extend the session.
+* Limits answer 409 `limit_reached` (too many objects) or 413
+  `quota_exceeded` (storage quota).

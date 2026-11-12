@@ -1,5 +1,6 @@
-import { html, useState, useRef, useStore, t, api, act, download, useLoad, useLive, can, getLocale, userName, linkify, linkLabel, safeUrl, fmtDate, fmtTime,
+import { html, useState, useEffect, useRef, useStore, go, t, api, apiSend, act, download, useLoad, useLive, can, getLocale, userName, linkify, linkLabel, safeUrl, fmtDate, fmtTime,
   toInput, fromInput, toDateInput, fromDateInput, Icon, Modal, Field, useForm, ShareEditor, ShareButton, SharedBadge, Page, Loading, confirmDelete, toast } from '../lib.js';
+import { Attachments, ScanInto } from '../media.js';
 
 const DAY = 86400;
 const startOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
@@ -53,6 +54,7 @@ function EventForm({ event, day, onClose }) {
     <${Field} label=${t('cal.location')}><input ...${bind('location')} maxlength="300" /><//>
     <${Field} label=${t('cal.link')} hint=${t('cal.link_hint')}><input type="url" ...${bind('url')} placeholder="https://" /><//>
     <${Field} label=${t('common.description')}><textarea ...${bind('description')}></textarea><//>
+    <${ScanInto} value=${f.description} onChange=${(v) => set('description', v)} />
     ${!event && html`<${Field} group label=${t('share.who')}><${ShareEditor} value=${shares} onChange=${setShares} /><//>`}
     <div class="buttons"><button type="button" onClick=${() => onClose(false)}>${t('common.cancel')}</button><button class="primary">${t('common.save')}</button></div>
   </form><//>`;
@@ -68,6 +70,7 @@ function EventView({ event: e, me, onClose, onEdit }) {
     ${e.location && html`<p><${Icon} name="home" /> ${e.location}</p>`}
     ${url && html`<p><a href=${url} target="_blank" rel="noopener noreferrer" class="meetlink"><${Icon} name="video" /> ${linkLabel(url) ? t('common.join', { name: linkLabel(url) }) : t('cal.open_link')}</a></p>`}
     ${e.description && html`<p class="pre">${linkify(e.description)}</p>`}
+    ${!e.meeting_id && html`<${Attachments} type="event" id=${e.id} canEdit=${e.owner_id === me.id} />`}
     <p class="row"><${SharedBadge} shared=${e.shared} /><span class="muted small">${userName(e.owner_id)}</span></p>
     <div class="buttons">
       <button onClick=${() => act(() => download('GET', '/calendar/export.ics?id=' + e.id, undefined, 'event.ics'))}><${Icon} name="download" /> .ics</button>
@@ -79,7 +82,7 @@ function EventView({ event: e, me, onClose, onEdit }) {
     </div><//>`;
 }
 
-export function Calendar() {
+export function Calendar({ route }) {
   const s = useStore();
   const [month, setMonth] = useState(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); });
   const [modal, setModal] = useState(null);
@@ -100,12 +103,21 @@ export function Calendar() {
     const file = e.target.files[0];
     if (!file) return;
     const text = await file.text();
-    const r = await act(async () => (await fetch('/api/calendar/import', { method: 'POST', credentials: 'same-origin',
-      headers: { 'Content-Type': 'text/calendar', 'X-CSRF-Token': s.csrf }, body: text })).json());
-    if (r && r.imported !== undefined) { toast(t('cal.imported', { n: r.imported })); st.reload(); } else if (r) toast(t('err.invalid_ics'), 'error');
+    const r = await act(() => apiSend('POST', '/calendar/import', text, 'text/calendar'));
+    if (r) { toast(t('cal.imported', { n: r.imported })); st.reload(); }
     e.target.value = '';
   };
-  const done = (changed) => { setModal(null); if (changed) st.reload(); };
+  const done = (changed) => { setModal(null); if (changed) st.reload(); if (route[1]) go('calendar'); };
+  // A link to one event (#/calendar/<id>) opens that event.
+  useEffect(() => {
+    if (!route[1]) return;
+    api('GET', '/calendar?event=' + route[1]).then((evs) => {
+      if (!evs.length) { toast(t('link.none_hint'), 'error'); go('calendar'); return; }
+      const d = new Date(evs[0].starts_at * 1000);
+      setMonth(new Date(d.getFullYear(), d.getMonth(), 1));
+      setModal({ view: evs[0] });
+    }).catch(() => go('calendar'));
+  }, [route[1]]);
   const upcoming = (st.data || []).filter((e) => e.ends_at + (e.all_day ? DAY : 0) >= Date.now() / 1000).slice(0, 8);
   return html`<${Page} title=${t('nav.calendar')} actions=${html`
       <input type="file" accept=".ics,text/calendar" hidden ref=${fileInput} onChange=${importIcs} />

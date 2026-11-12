@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 660 200" role="img" aria-label="Samling">
+  <title>Samling</title>
+  <g transform="translate(12 12) scale(.34375)">
+    <rect width="512" height="512" rx="112" fill="#221B3A"/>
+    <g fill="none" stroke-width="40" stroke-linecap="round">
+      <circle cx="256" cy="152" r="36" fill="#F25C54"/>
+      <path d="M192.9 91.7A176 176 0 0 1 319.1 91.7" stroke="#F25C54"/>
+      <circle cx="346.1" cy="204" r="36" fill="#F7931E"/>
+      <path d="M366.8 119.2A176 176 0 0 1 429.8 228.5" stroke="#F7931E"/>
+      <circle cx="346.1" cy="308" r="36" fill="#FFC53D"/>
+      <path d="M429.8 283.5A176 176 0 0 1 366.8 392.8" stroke="#FFC53D"/>
+      <circle cx="256" cy="360" r="36" fill="#3DBE8B"/>
+      <path d="M319.1 420.3A176 176 0 0 1 192.9 420.3" stroke="#3DBE8B"/>
+      <circle cx="165.9" cy="308" r="36" fill="#2FA4D7"/>
+      <path d="M145.2 392.8A176 176 0 0 1 82.2 283.5" stroke="#2FA4D7"/>
+      <circle cx="165.9" cy="204" r="36" fill="#C7508F"/>
+      <path d="M82.2 228.5A176 176 0 0 1 145.2 119.2" stroke="#C7508F"/>
+      <circle cx="256" cy="256" r="26" fill="#FFF3DC"/>
+    </g>
+  </g>
+  <text x="218" y="136" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="104" font-weight="700" letter-spacing="-2" fill="#E8553C">Samling</text>
+</svg>

@@ -11,6 +11,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/base32"
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
@@ -66,9 +67,11 @@ func GenerateKey() []byte {
 }
 
 // EncryptField encrypts a short string (PII, secrets) with AES-256-GCM. The
-// context string is bound as additional data so a ciphertext cannot be moved
-// to another column. Empty input gives empty output.
-func (k *Keys) EncryptField(plain, context string) string {
+// column name and the id of the row are bound as additional data, so a
+// ciphertext cannot be moved to another column or to another row (for
+// example copying somebody else's e-mail or TOTP secret into your own
+// account by writing to the database). Empty input gives empty output.
+func (k *Keys) EncryptField(plain, column, rowID string) string {
 	if plain == "" {
 		return ""
 	}
@@ -76,29 +79,75 @@ func (k *Keys) EncryptField(plain, context string) string {
 	if _, err := rand.Read(nonce); err != nil {
 		panic(err)
 	}
-	ct := k.field.Seal(nonce, nonce, []byte(plain), []byte(context))
-	return "v1:" + base64.RawStdEncoding.EncodeToString(ct)
+	ct := k.field.Seal(nonce, nonce, []byte(plain), []byte(column+"|"+rowID))
+	return "v2:" + base64.RawStdEncoding.EncodeToString(ct)
 }
 
-// DecryptField reverses EncryptField.
-func (k *Keys) DecryptField(enc, context string) (string, error) {
-	if enc == "" {
-		return "", nil
-	}
-	raw, ok := strings.CutPrefix(enc, "v1:")
-	if !ok {
-		return "", errors.New("unknown field encryption version")
-	}
+func (k *Keys) openField(raw string, aad string) (string, error) {
 	ct, err := base64.RawStdEncoding.DecodeString(raw)
 	if err != nil || len(ct) < k.field.NonceSize() {
 		return "", errors.New("malformed ciphertext")
 	}
 	n := k.field.NonceSize()
-	pt, err := k.field.Open(nil, ct[:n], ct[n:], []byte(context))
+	pt, err := k.field.Open(nil, ct[:n], ct[n:], []byte(aad))
 	if err != nil {
 		return "", err
 	}
 	return string(pt), nil
+}
+
+// DecryptField reverses EncryptField.
+func (k *Keys) DecryptField(enc, column, rowID string) (string, error) {
+	if enc == "" {
+		return "", nil
+	}
+	raw, ok := strings.CutPrefix(enc, "v2:")
+	if !ok {
+		return "", errors.New("unknown field encryption version")
+	}
+	return k.openField(raw, column+"|"+rowID)
+}
+
+// IsLegacyField reports whether a value uses the first format, which bound
+// only the column. Such values are upgraded once at start-up and are not
+// accepted anywhere else.
+func IsLegacyField(enc string) bool { return strings.HasPrefix(enc, "v1:") }
+
+// DecryptLegacyField decrypts a first-format value for that upgrade.
+func (k *Keys) DecryptLegacyField(enc, column string) (string, error) {
+	raw, ok := strings.CutPrefix(enc, "v1:")
+	if !ok {
+		return "", errors.New("not a legacy value")
+	}
+	return k.openField(raw, column)
+}
+
+// BlobKey derives the encryption key of one stored file from the blob master
+// key and the file's storage key. Every file having its own key binds a
+// ciphertext to its storage key (objects cannot be swapped by someone who can
+// write to the storage back-end) and keeps nonces unique per key.
+func (k *Keys) BlobKey(storageKey string) []byte {
+	out, err := hkdf.Key(sha256.New, k.Blob, nil, "samling/v1/blob-file/"+storageKey, 32)
+	if err != nil {
+		panic(err)
+	}
+	return out
+}
+
+// NewRecoveryCode returns a one-time recovery code with 80 bits of entropy,
+// formatted in groups for reading aloud or typing: xxxx-xxxx-xxxx-xxxx.
+func NewRecoveryCode() string {
+	b := make([]byte, 10)
+	if _, err := rand.Read(b); err != nil {
+		panic(err)
+	}
+	s := strings.ToLower(base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(b))
+	return s[0:4] + "-" + s[4:8] + "-" + s[8:12] + "-" + s[12:16]
+}
+
+// NormalizeRecoveryCode removes separators and case differences.
+func NormalizeRecoveryCode(code string) string {
+	return strings.ToLower(strings.NewReplacer("-", "", " ", "").Replace(strings.TrimSpace(code)))
 }
 
 // BlindIndex returns a keyed hash that allows equality lookups on encrypted

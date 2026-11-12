@@ -162,6 +162,11 @@ func (d *decReader) Read(p []byte) (int, error) {
 				return 0, ErrCorrupt
 			}
 			d.done = true
+			// Nothing may follow the final chunk.
+			var extra [1]byte
+			if n, _ := d.r.Read(extra[:]); n > 0 {
+				return 0, ErrCorrupt
+			}
 		}
 		d.ctr++
 		d.buf = pt

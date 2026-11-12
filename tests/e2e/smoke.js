@@ -7,17 +7,25 @@
 // the fresh "admin" account), E2E_OUT (directory for screenshots/downloads).
 const { chromium } = require('playwright');
 const fs = require('fs');
-const BASE = process.env.E2E_URL || 'http://127.0.0.1:8090';
+const BASE = process.env.E2E_URL || 'http://localhost:8090'; // a host name: passkeys do not work on IP addresses
 const temp = process.env.E2E_ADMIN_PASSWORD;
 const OUT = process.env.E2E_OUT || __dirname + '/out';
 fs.mkdirSync(OUT, { recursive: true });
 const PW = 'correct horse battery staple';
 const errors = [];
+// The welcome tour opens at a person's first sign-in; tests skip it.
+const dismissTour = async (p) => {
+  const skip = p.getByRole('dialog').getByRole('button', { name: /^(Skip|Hoppa över)/ });
+  try { await skip.waitFor({ timeout: 1500 }); await skip.click(); } catch { /* no tour shown */ }
+};
 const step = async (name, fn) => { try { await fn(); console.log('ok   ' + name); } catch (e) { console.log('FAIL ' + name + ': ' + e.message.split('\n').slice(0,6).join(' | ')); errors.push(name); } };
 
 (async () => {
-  const browser = await chromium.launch();
+  // A fake camera, and no permission question: the camera steps run unattended.
+  const browser = await chromium.launch({ args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'] });
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, locale: 'sv-SE', timezoneId: 'Europe/Stockholm', acceptDownloads: true });
+  // The welcome tour is exercised with the second user; elsewhere it is switched off.
+  await ctx.addInitScript(() => localStorage.setItem('samling.tour', 'off'));
   const page = await ctx.newPage();
   page.on('console', (m) => { if (m.type() === 'error' && !m.text().includes('401')) { console.log('  console.error:', m.text().slice(0, 300)); errors.push('console'); } });
   page.on('pageerror', (e) => { console.log('  pageerror:', e.message.slice(0, 300)); errors.push('pageerror'); });
@@ -30,7 +38,7 @@ const step = async (name, fn) => { try { await fn(); console.log('ok   ' + name)
     await page.goto(BASE);
     await page.getByLabel('Användarnamn').fill('admin');
     await page.getByLabel('Lösenord').fill(temp);
-    await page.getByRole('button', { name: 'Logga in' }).click();
+    await page.getByRole('button', { name: 'Logga in', exact: true }).click();
     await page.getByRole('heading', { name: 'Välj ett nytt lösenord' }).waitFor();
     await shot('01-pending');
     await page.getByLabel('Nuvarande lösenord').fill(temp);
@@ -269,6 +277,200 @@ const step = async (name, fn) => { try { await fn(); console.log('ok   ' + name)
     await shot('16-groups');
   });
 
+  await step('chat: formatting, emoji, reactions and comments', async () => {
+    await page.goto(BASE + '/#/chat');
+    await page.getByRole('link', { name: /general/ }).click();
+    const box = page.getByLabel('Skriv ett meddelande');
+    await box.fill('viktigt');
+    await box.press('Control+a');
+    await box.press('Control+b');
+    if ((await box.inputValue()) !== '**viktigt**') throw new Error('Ctrl+B gave ' + (await box.inputValue()));
+    await box.fill('**Städdag** på *lördag* – __ta med handskar__! ');
+    await page.getByRole('toolbar').getByRole('button', { name: 'Infoga emoji' }).click();
+    await page.locator('.emoji-pop').getByRole('button', { name: '🎉' }).click();
+    if (!(await box.inputValue()).includes('🎉')) throw new Error('emoji not inserted');
+    await page.getByRole('button', { name: 'Skicka', exact: true }).click();
+    const msg = page.locator('.thread-root').last().locator('.msg').first();
+    await msg.locator('strong', { hasText: 'Städdag' }).waitFor();
+    await msg.locator('em', { hasText: 'lördag' }).waitFor();
+    await msg.locator('u', { hasText: 'ta med handskar' }).waitFor();
+    // A message that looks like markup stays text.
+    await box.fill('<img src=x onerror=alert(1)> **<b>fet</b>**');
+    await box.press('Enter');
+    await page.locator('.msg strong', { hasText: '<b>fet</b>' }).waitFor();
+    if (await page.locator('.msg .pre img').count()) throw new Error('markup was interpreted');
+    // React, and take the reaction back.
+    await msg.hover();
+    await msg.getByRole('button', { name: 'Reagera' }).click();
+    await msg.locator('.emoji-pop').getByRole('button', { name: '👍' }).click();
+    await msg.locator('.reaction[aria-pressed=true]', { hasText: '1' }).waitFor();
+    await msg.locator('.reaction').click();
+    await msg.locator('.reaction').waitFor({ state: 'detached' });
+    await msg.hover();
+    await msg.getByRole('button', { name: 'Reagera' }).click();
+    await msg.locator('.emoji-pop').getByRole('button', { name: '❤️' }).click();
+    await msg.locator('.reaction').waitFor();
+    // Comment on the message.
+    await msg.hover();
+    await msg.getByRole('button', { name: 'Kommentera' }).click();
+    await page.getByLabel('Skriv en kommentar').fill('Jag kommer!');
+    await page.getByLabel('Skriv en kommentar').press('Enter');
+    await page.locator('.thread .msg', { hasText: 'Jag kommer!' }).waitFor();
+    await shot('50-chat-rich');
+  });
+
+  // A picture of printed text, for the text recognition.
+  const textPicture = async () => {
+    const p = await ctx.newPage();
+    await p.setViewportSize({ width: 900, height: 420 });
+    await p.setContent('<body style="margin:0;background:#fff"><div style="font:54px/1.5 Arial,sans-serif;color:#000;padding:40px">Packa tältet<br>Ring Cecilia<br>Betala avgiften</div></body>');
+    const buf = await p.screenshot({ type: 'png' });
+    await p.close();
+    return buf;
+  };
+
+  await step('camera: a photo in the chat', async () => {
+    await page.getByRole('toolbar').getByRole('button', { name: 'Ta en bild' }).click();
+    const dlg = page.getByRole('dialog', { name: 'Ta en bild' });
+    await dlg.locator('video').waitFor();
+    await page.waitForFunction(() => { const v = document.querySelector('video.camera'); return v && v.videoWidth > 0; });
+    await dlg.getByRole('button', { name: 'Ta bild' }).click();
+    await page.locator('.composer .thumb img').waitFor();
+    await page.getByLabel('Skriv ett meddelande').fill('Så här ser det ut');
+    await page.getByRole('button', { name: 'Skicka', exact: true }).click();
+    const img = page.locator('.msg .thumb img').last();
+    await img.waitFor();
+    await page.waitForFunction(() => { const all = document.querySelectorAll('.msg .thumb img'); const i = all[all.length - 1]; return i && i.complete && i.naturalWidth > 0; });
+    await img.click();
+    await page.getByRole('dialog').locator('img.lightbox').waitFor();
+    await shot('51-chat-photo');
+    await page.keyboard.press('Escape');
+  });
+
+  await step('lists: task owner, attached picture, scanned text becomes items', async () => {
+    await page.goto(BASE + '/#/lists');
+    await page.getByRole('link', { name: /Inför sommarlägret/ }).click();
+    await page.getByLabel('Ansvarig: Köpa mat').selectOption({ label: 'Bertil Berg' });
+    await page.waitForFunction(() => [...document.querySelectorAll('.items li')].some((li) => li.textContent.includes('Köpa mat') && li.querySelector('.avatar')));
+    const att = page.getByRole('group', { name: 'Bilder och filer' });
+    await att.locator('input[type=file]').first().setInputFiles({ name: 'karta.png', mimeType: 'image/png', buffer: await textPicture() });
+    await att.locator('.thumb img').waitFor();
+    await att.getByRole('button', { name: 'Skanna text med kameran' }).click();
+    const dlg = page.getByRole('dialog', { name: 'Skanna text med kameran' });
+    await dlg.locator('input[type=file]').setInputFiles({ name: 'lapp.png', mimeType: 'image/png', buffer: await textPicture() });
+    const text = dlg.getByLabel('Text från bilden');
+    await text.waitFor({ timeout: 120000 });
+    const got = await text.inputValue();
+    if (!/Packa t.ltet/.test(got) || !/Ring Cecilia/.test(got) || !/Betala avgiften/.test(got)) throw new Error('recognised: ' + JSON.stringify(got));
+    await shot('52-scan');
+    await dlg.getByRole('button', { name: 'Använd texten' }).click();
+    await page.locator('.items li', { hasText: 'Ring Cecilia' }).waitFor();
+    await page.locator('.items li', { hasText: 'Betala avgiften' }).waitFor();
+    await shot('53-list-owner');
+  });
+
+  await step('boards: colour marks; a card with a picture', async () => {
+    await page.goto(BASE + '/#/boards');
+    await page.getByRole('link', { name: /Styrelsearbete/ }).click();
+    await page.locator('.board-bar').getByRole('radio', { name: 'Grön' }).click();
+    await page.locator('.board-bar.mark-green').waitFor();
+    await page.locator('.kcard').first().click();
+    const dlg = page.getByRole('dialog', { name: 'Kort' });
+    await dlg.getByRole('radio', { name: 'Röd' }).click();
+    await dlg.getByRole('group', { name: 'Bilder och filer' }).locator('input[type=file]').first().setInputFiles({ name: 'skiss.png', mimeType: 'image/png', buffer: await textPicture() });
+    await dlg.locator('.thumb img').waitFor();
+    await dlg.getByRole('button', { name: 'Spara' }).click();
+    await page.locator('.kcard.mark-red').waitFor();
+    await shot('54-board-colours');
+    await page.goto(BASE + '/#/boards');
+    await page.locator('a.card.mark-green').waitFor();
+  });
+
+  await step('profile: optional fields, picture; blocking direct messages', async () => {
+    await page.goto(BASE + '/#/settings');
+    await page.getByLabel('Intressen', { exact: true }).fill('Orientering och bakning');
+    await page.getByLabel('Adress', { exact: true }).fill('Björkvägen 3');
+    await page.getByLabel('Visa för andra medlemmar: Intressen').check();
+    await page.getByRole('radio', { name: 'Bild 3', exact: true }).click();
+    await page.locator('form.card').getByRole('button', { name: 'Spara' }).click();
+    await page.locator('.who .avatar.preset').waitFor();
+    await shot('55-profile');
+    await page.goto(BASE + '/#/people');
+    await page.getByText('Orientering och bakning').waitFor();
+    await page.getByRole('button', { name: 'Bertil Berg: Blockera direktmeddelanden' }).click();
+    await page.getByText('Blockerad', { exact: true }).waitFor();
+    await shot('56-people');
+    await page.goto(BASE + '/#/settings');
+    await page.locator('.card', { hasText: 'Blockerade personer' }).getByRole('button', { name: 'Sluta blockera' }).click();
+    await page.getByText('Du har inte blockerat någon.').waitFor();
+  });
+
+  await step('internal links: from a chat message to a poll, and from meeting notes to a board', async () => {
+    await page.goto(BASE + '/#/chat');
+    await page.getByRole('link', { name: /general/ }).click();
+    await page.getByRole('toolbar').getByRole('button', { name: 'Länka till något i Samling' }).click();
+    let dlg = page.getByRole('dialog', { name: 'Länka till något i Samling' });
+    await dlg.getByLabel('Typ').selectOption('poll');
+    await dlg.locator('.link-list button').first().click();
+    const box = page.getByLabel('Skriv ett meddelande');
+    if (!/^\[\[poll:[0-9a-f]+\]\] $/.test(await box.inputValue())) throw new Error('inserted ' + (await box.inputValue()));
+    await box.press('Enter');
+    const link = page.locator('.msg a.ref').last();
+    await link.waitFor();
+    const title = (await link.textContent()).trim();
+    if (!title || title.includes('[[')) throw new Error('link title: ' + title);
+    await link.click();
+    await page.waitForFunction(() => location.hash.startsWith('#/polls/'));
+    await page.getByRole('heading', { level: 1, name: title }).waitFor();
+    // A pasted address of a page works as well; a link to nothing says only that.
+    await page.goto(BASE + '/#/boards');
+    await page.getByRole('link', { name: /Styrelsearbete/ }).click();
+    await page.getByRole('heading', { level: 1, name: 'Styrelsearbete' }).waitFor();
+    const boardUrl = page.url();
+    await page.goto(BASE + '/#/chat');
+    await page.getByRole('link', { name: /general/ }).click();
+    await box.fill('Se ' + boardUrl + ' och [[board:finnsinte]]');
+    await box.press('Enter');
+    await page.locator('.msg a.ref', { hasText: 'Styrelsearbete' }).waitFor();
+    await page.locator('.msg .ref.none', { hasText: 'ingen åtkomst' }).waitFor();
+    await shot('57-links');
+    // Meeting: link to the board from the description of the meeting.
+    await page.goto(BASE + '/#/meetings');
+    await page.getByRole('button', { name: /Planera möte|Nytt möte/ }).first().click();
+    await page.getByRole('dialog').getByLabel('Rubrik').fill('Planeringsmöte');
+    await page.getByRole('dialog').getByRole('button', { name: /Skapa|Spara/ }).click();
+    await page.getByRole('heading', { level: 1, name: 'Planeringsmöte' }).waitFor();
+    await page.locator('.field-tools').first().getByRole('button', { name: 'Länka till något i Samling' }).click();
+    dlg = page.getByRole('dialog', { name: 'Länka till något i Samling' });
+    await dlg.getByRole('searchbox').fill('Styrelsearbete');
+    await dlg.locator('.link-list button').first().click();
+    await page.locator('.refs a.ref', { hasText: 'Styrelsearbete' }).waitFor();
+    await page.getByRole('button', { name: 'Spara', exact: true }).first().click();
+    await page.locator('.refs a.ref', { hasText: 'Styrelsearbete' }).click();
+    await page.getByRole('heading', { level: 1, name: 'Styrelsearbete' }).waitFor();
+  });
+
+  await step('mentions: suggestion list while typing', async () => {
+    await page.goto(BASE + '/#/chat');
+    await page.getByRole('link', { name: /general/ }).click();
+    const box = page.getByLabel('Skriv ett meddelande');
+    await box.pressSequentially('Kan du ta nycklarna, @ber');
+    await page.getByRole('listbox', { name: 'Personer att nämna' }).getByRole('option', { name: /Bertil Berg/ }).waitFor();
+    await box.press('Enter');
+    if (!(await box.inputValue()).endsWith('@bertil ')) throw new Error('mention inserted as ' + (await box.inputValue()));
+    await box.press('Enter');
+    await page.locator('.msg .mention', { hasText: '@Bertil Berg' }).waitFor();
+    // Mentioned in a direct conversation Bertil is not part of: he must not hear of it (checked as Bertil below).
+    await page.getByRole('button', { name: 'Nytt direktmeddelande' }).click();
+    await page.getByRole('dialog').getByText('Cecilia Ceder').click();
+    await page.getByRole('button', { name: 'Starta konversation' }).click();
+    await page.getByRole('heading', { name: 'Cecilia Ceder' }).waitFor();
+    await box.fill('@bertil ska inte få veta detta');
+    await box.press('Enter');
+    await page.locator('.msg', { hasText: 'ska inte få veta' }).waitFor();
+    await shot('58-mention');
+  });
+
   await step('search', async () => {
     await page.goto(BASE + '/#/search');
     await page.getByLabel(/Sök meddelanden/).fill('budget*');
@@ -302,8 +504,6 @@ const step = async (name, fn) => { try { await fn(); console.log('ok   ' + name)
     await page.getByRole('heading', { name: 'Appearance' }).waitFor();
     await page.getByRole('button', { name: 'Dark' }).click();
     await page.getByLabel('Normal').check();
-    await page.getByRole('button', { name: 'Set up two-step verification' }).click();
-    await page.locator('.qr img').waitFor();
     await shot('20-settings-dark-en');
     await page.reload();
     await page.getByRole('heading', { name: 'Appearance' }).waitFor(); // language + theme persisted
@@ -334,12 +534,24 @@ const step = async (name, fn) => { try { await fn(); console.log('ok   ' + name)
     await p2.goto(BASE);
     await p2.getByLabel('Användarnamn').fill('bertil');
     await p2.getByLabel('Lösenord').fill('temporary-password-1');
-    await p2.getByRole('button', { name: 'Logga in' }).click();
+    await p2.getByRole('button', { name: 'Logga in', exact: true }).click();
     await p2.getByLabel('Nuvarande lösenord').fill('temporary-password-1');
     await p2.getByLabel('Nytt lösenord', { exact: true }).fill(PW);
     await p2.getByLabel('Upprepa nytt lösenord').fill(PW);
     await p2.getByRole('button', { name: 'Byt lösenord' }).click();
     await p2.getByRole('button', { name: 'Meny' }).waitFor();
+    // First sign-in: the welcome tour opens. Step through it, then check it stays away.
+    const tour = p2.getByRole('dialog');
+    await tour.waitFor();
+    await p2.screenshot({ path: OUT + '/shot-29-mobile-tour.png' });
+    await tour.getByRole('button', { name: 'Nästa' }).click();
+    await tour.getByRole('button', { name: 'Nästa' }).click();
+    await tour.getByRole('button', { name: 'Hoppa över' }).click();
+    await tour.waitFor({ state: 'detached' });
+    await p2.reload();
+    await p2.getByRole('button', { name: 'Meny' }).waitFor();
+    await p2.waitForTimeout(1200);
+    if (await p2.getByRole('dialog').count()) throw new Error('the tour came back after being skipped');
     await p2.screenshot({ path: OUT + '/shot-30-mobile-home.png' });
     await p2.getByRole('button', { name: 'Meny' }).click();
     await p2.screenshot({ path: OUT + '/shot-31-mobile-menu.png' });
@@ -367,12 +579,149 @@ const step = async (name, fn) => { try { await fn(); console.log('ok   ' + name)
     await p2.getByRole('link', { name: /Styrelsemöte/ }).click();
     await p2.getByText(/Justerat av Anna Admin/).waitFor();
     await p2.screenshot({ path: OUT + '/shot-35-mobile-meeting.png' });
+    // Mentions: Bertil hears of the one in the channel he can read, not of the one in somebody else's direct conversation.
+    await p2.goto(BASE + '/#/mentions');
+    await p2.getByText('Kan du ta nycklarna').waitFor();
+    if ((await p2.locator('.rows > a').count()) !== 1 || await p2.getByText('ska inte få veta').count()) throw new Error('mention from a channel without access was shown');
+    await p2.screenshot({ path: OUT + '/shot-36-mobile-mentions.png' });
+    await p2.locator('.rows > a').click();
+    await p2.locator('.msg .mention.me').first().waitFor();
     await ctx2.close();
   });
 
+  await step('crafted links cannot steer requests to another endpoint', async () => {
+    const sent = [];
+    const watch = (r) => { if (r.url().includes('/api/')) sent.push(new URL(r.url()).pathname); };
+    page.on('request', watch);
+    for (const hash of ['#/lists/..%2Fadmin%2Fusers', '#/lists/..%2F..%2Fapi%2Fme', '#/documents/%2e%2e%2ffiles%2fabc', '#/boards/a%2Fb', '#/polls/%ZZ']) {
+      await page.goto(BASE + '/' + hash);
+      await page.waitForTimeout(300);
+    }
+    page.off('request', watch);
+    const bad = sent.filter((p) => !/^\/api\/(channels|calendar|polls|decisions|events|me|users|groups|roles|lists|documents|boards)$/.test(p));
+    if (bad.length) throw new Error('unexpected requests: ' + bad.join(', '));
+    // The request helper itself refuses paths that are not plain segments.
+    const res = await page.evaluate(async () => {
+      const { api } = await import('/js/lib.js');
+      const out = [];
+      for (const p of ['/lists/../admin/users', '/lists/a%2Fb', '/lists//x', '/files/x/../../me']) {
+        try { await api('GET', p); out.push('SENT ' + p); } catch (e) { out.push(e.code); }
+      }
+      return out;
+    });
+    if (res.some((x) => x !== 'bad_request_path')) throw new Error('path guard: ' + res.join(', '));
+  });
+
+  await step('two-step verification with recovery codes; passkey registration and sign-in', async () => {
+    const totp = (secret) => {
+      const crypto = require('crypto');
+      const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+      let bits = '';
+      for (const ch of secret) bits += alphabet.indexOf(ch).toString(2).padStart(5, '0');
+      const key = Buffer.from(bits.match(/.{8}/g).map((b) => parseInt(b, 2)));
+      const msg = Buffer.alloc(8);
+      msg.writeBigUInt64BE(BigInt(Math.floor(Date.now() / 30000)));
+      const h = crypto.createHmac('sha1', key).update(msg).digest();
+      const o = h[h.length - 1] & 15;
+      return String((h.readUInt32BE(o) & 0x7fffffff) % 1000000).padStart(6, '0');
+    };
+    const ctx3 = await browser.newContext({ viewport: { width: 1280, height: 800 }, locale: 'en-GB' });
+    await ctx3.addInitScript(() => localStorage.setItem('samling.tour', 'off'));
+    const p3 = await ctx3.newPage();
+    p3.on('pageerror', (e) => { console.log('  pageerror(p3):', e.message.slice(0, 300)); errors.push('pageerror'); });
+    p3.on('dialog', (d) => d.accept(PW));
+    p3.setDefaultTimeout(6000);
+    // A virtual authenticator with user verification stands in for a phone or security key.
+    const cdp = await ctx3.newCDPSession(p3);
+    await cdp.send('WebAuthn.enable');
+    await cdp.send('WebAuthn.addVirtualAuthenticator', { options: { protocol: 'ctap2', transport: 'internal', hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true } });
+    const signIn = async (code) => {
+      await p3.goto(BASE);
+      await p3.getByLabel('Username').fill('cecilia');
+      await p3.getByLabel('Password').fill(code === undefined ? 'temporary-password-1' : PW);
+      await p3.getByRole('button', { name: 'Sign in', exact: true }).click();
+      if (code !== undefined && code !== null) {
+        await p3.getByLabel('Verification code').fill(code);
+        await p3.getByRole('button', { name: 'Sign in', exact: true }).click();
+      }
+    };
+    await p3.goto(BASE);
+    await p3.getByRole('combobox').selectOption('en');
+    await signIn();
+    // The account's language is Swedish until it is changed in the settings.
+    await p3.getByLabel('Nuvarande lösenord').fill('temporary-password-1');
+    await p3.getByLabel('Nytt lösenord', { exact: true }).fill(PW);
+    await p3.getByLabel('Upprepa nytt lösenord').fill(PW);
+    await p3.getByRole('button', { name: 'Byt lösenord' }).click();
+    await p3.locator('nav.nav').waitFor();
+    await p3.goto(BASE + '/#/settings');
+    await p3.getByLabel('English').check();
+    // Authenticator app + recovery codes
+    const mfa = p3.locator('form', { has: p3.getByRole('button', { name: 'Set up two-step verification' }) });
+    await mfa.getByLabel('Current password').fill(PW);
+    await mfa.getByRole('button').click();
+    const secret = (await p3.locator('code.secret').innerText()).trim();
+    await p3.getByLabel('Verification code').fill(totp(secret));
+    await p3.getByRole('button', { name: 'Turn on' }).click();
+    await p3.locator('.codes li').nth(9).waitFor();
+    const codes = await p3.locator('.codes li').allInnerTexts();
+    await p3.screenshot({ path: OUT + '/shot-50-recovery-codes.png' });
+    await p3.getByRole('button', { name: 'I have saved them' }).click();
+    await p3.getByText('Unused recovery codes: 10.').waitFor();
+    // Passkey registration
+    const pk = p3.locator('form', { has: p3.getByRole('button', { name: 'Add a passkey' }) });
+    await pk.getByLabel('Name, e.g. My phone').fill('Test key');
+    await pk.getByLabel('Current password').fill(PW);
+    await pk.getByRole('button', { name: 'Add a passkey' }).click();
+    await p3.getByText('Test key').waitFor();
+    await p3.screenshot({ path: OUT + '/shot-51-passkey.png' });
+    // Sign in again with password + a recovery code (single use)
+    await p3.getByRole('button', { name: 'Sign out', exact: true }).click();
+    await signIn(codes[0]);
+    await p3.locator('nav.nav').waitFor();
+    await p3.getByRole('button', { name: 'Sign out', exact: true }).click();
+    await signIn(codes[0]);
+    await p3.getByText('Wrong username, password or code.').waitFor();
+    // Sign in with the passkey: no user name, no password
+    await p3.goto(BASE);
+    await p3.getByRole('button', { name: 'Sign in with a passkey' }).click();
+    await p3.locator('nav.nav').waitFor();
+    await p3.goto(BASE + '/#/settings');
+    await p3.getByText('last used').waitFor();
+    await p3.getByText('Unused recovery codes: 9.').waitFor();
+    // The administrator signs the account out everywhere.
+    await page.goto(BASE + '/#/admin');
+    await page.locator('tr', { hasText: '@cecilia' }).getByRole('button').click();
+    await page.getByRole('button', { name: /Sign out everywhere \(\d active\)/ }).click();
+    await page.getByText('The person was signed out on all devices').waitFor();
+    await p3.reload();
+    await p3.getByRole('button', { name: 'Sign in', exact: true }).waitFor();
+    await ctx3.close();
+    errors.splice(0, errors.length, ...errors.filter((x) => x !== 'console')); // expected 401s above
+  });
+
+  await step('online help in both languages; tour can be restarted', async () => {
+    await page.goto(BASE + '/#/meetings');
+    await page.locator('.page-head').getByRole('link', { name: 'Help' }).click();
+    await page.waitForFunction(() => location.hash === '#/help/meetings');
+    await page.getByRole('heading', { level: 1 }).waitFor();
+    await shot('60-help-topic');
+    await page.goto(BASE + '/#/help');
+    await page.getByRole('searchbox').fill('passkey');
+    await page.getByRole('link', { name: /Settings/ }).first().waitFor();
+    await page.getByRole('searchbox').fill('');
+    await shot('61-help');
+    await page.getByRole('button', { name: /welcome tour/i }).click();
+    const tour = page.getByRole('dialog');
+    await tour.waitFor();
+    await shot('62-tour');
+    await page.keyboard.press('Escape');
+    await tour.waitFor({ state: 'detached' });
+  });
+
   await step('logout', async () => {
-    await page.getByRole('button', { name: 'Sign out' }).click();
-    await page.getByRole('button', { name: 'Sign in' }).waitFor();
+    await page.getByRole('button', { name: 'Sign out', exact: true }).click();
+    await page.getByRole('button', { name: 'Sign in', exact: true }).waitFor();
     await shot('40-login');
   });
 

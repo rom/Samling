@@ -45,6 +45,7 @@ function EditUser({ user, onClose }) {
     if (await act(() => api('PATCH', '/admin/users/' + user.id, body), t('common.saved'))) onClose(true);
   };
   const action = async (body, msg) => { if (await act(() => api('PATCH', '/admin/users/' + user.id, body), msg)) onClose(true); };
+  const signOut = async () => { if (await act(() => api('POST', `/admin/users/${user.id}/sign-out`), t('admin.signed_out'))) onClose(true); };
   const setPassword = async () => { if (await act(() => api('POST', `/admin/users/${user.id}/password`, { password: pw }), t('admin.password_set'))) onClose(true); };
   const del = async () => { if (window.confirm(t('admin.confirm_delete_user', { name: user.username })) && await act(() => api('DELETE', '/admin/users/' + user.id), t('admin.user_deleted'))) onClose(true); };
   return html`<${Modal} title=${t('admin.edit_user') + ': @' + user.username} onClose=${() => onClose(false)} wide>
@@ -65,7 +66,8 @@ function EditUser({ user, onClose }) {
         <button type="button" disabled=${pw.length < S.minPassword} onClick=${setPassword}>${t('admin.set_password')}</button></div>
       <p class="muted small">${t('admin.temp_password_hint')}</p></fieldset>
     <fieldset><legend>${t('admin.account_actions')}</legend><div class="row">
-      ${user.totp_enabled && html`<button type="button" onClick=${() => action({ reset_mfa: true }, t('admin.mfa_reset_done'))}>${t('admin.reset_mfa')}</button>`}
+      <button type="button" disabled=${user.sessions === 0} onClick=${signOut}><${Icon} name="logout" /> ${t('admin.sign_out', { n: user.sessions })}</button>
+      ${(user.totp_enabled || user.passkeys > 0) && html`<button type="button" onClick=${() => action({ reset_mfa: true }, t('admin.mfa_reset_done'))}>${t('admin.reset_mfa')}</button>`}
       <button type="button" onClick=${() => action({ unlock: true }, t('admin.unlocked'))}>${t('admin.unlock')}</button>
       <button type="button" class="danger" onClick=${del}><${Icon} name="trash" /> ${t('admin.delete_user')}</button></div>
       <p class="muted small">${t('admin.delete_hint')}</p></fieldset>
@@ -85,7 +87,7 @@ function Accounts() {
       <tbody>${st.data.map((u) => html`<tr key=${u.id}><td>@${u.username} ${u.disabled && html`<${Badge} kind="danger">${t('admin.disabled')}<//>`}</td>
         <td>${u.display_name}<br /><span class="muted small">${u.email}</span></td>
         <td>${u.roles.map((r) => html`<${Badge} kind=${r === 'admin' ? 'info' : ''}>${roles[r] ? roleName(roles[r]) : r}<//> `)}</td>
-        <td>${u.totp_enabled ? html`<${Badge} kind="ok">${t('common.on')}<//>` : u.mfa_required ? html`<${Badge} kind="warn">${t('admin.mfa_pending')}<//>` : html`<span class="muted">${t('common.off')}</span>`}</td>
+        <td>${u.totp_enabled || u.passkeys > 0 ? html`<${Badge} kind="ok">${u.totp_enabled ? t('common.on') : t('admin.passkey')}<//>` : u.mfa_required ? html`<${Badge} kind="warn">${t('admin.mfa_pending')}<//>` : html`<span class="muted">${t('common.off')}</span>`}</td>
         <td class="nowrap small">${u.last_login_at ? fmtDateTime(u.last_login_at) : '–'}</td>
         <td><button onClick=${() => setModal({ user: u })}><${Icon} name="edit" /> ${t('common.edit')}<span class="sr-only"> @${u.username}</span></button></td></tr>`)}</tbody></table></div>
     ${modal && modal.create && html`<${NewUser} onClose=${done} />`}

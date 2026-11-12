@@ -3,6 +3,8 @@
 import { html, render, Component, useState, useEffect, useRef, useMemo, useCallback } from '../vendor/htm-preact-standalone.js';
 import en from './i18n/en.js';
 import sv from './i18n/sv.js';
+import guideEn from './i18n/guide-en.js';
+import guideSv from './i18n/guide-sv.js';
 
 export { html, render, useState, useEffect, useRef, useMemo, useCallback };
 
@@ -11,7 +13,7 @@ export { html, render, useState, useEffect, useRef, useMemo, useCallback };
 const listeners = new Set();
 export const S = {
   me: null, csrf: '', pending: '', org: 'Samling', maxUploadMB: 50, minPassword: 12,
-  users: [], userMap: {}, groups: [], roles: [], ready: false,
+  users: [], userMap: {}, groups: [], roles: [], blocks: [], ready: false,
 };
 
 let version = 0; // bumped on every change, so late subscribers can catch up
@@ -40,7 +42,8 @@ export const can = (perm) => !!S.me && S.me.perms.includes(perm);
 
 // ---------- i18n ----------
 
-const dict = { en, sv };
+// The guide files hold the texts of the welcome tour and the online help.
+const dict = { en: { ...en, ...guideEn }, sv: { ...sv, ...guideSv } };
 export const locales = { sv: 'Svenska', en: 'English' };
 let locale = 'sv';
 try { locale = localStorage.getItem('samling.locale') || (navigator.language || 'sv').slice(0, 2); } catch { /* ignore */ }
@@ -90,9 +93,25 @@ export function errText(e) {
   return t('err.network');
 }
 
+// Tells the server whether the person is actually using the application:
+// background refreshes (live updates) must not keep an idle session alive.
+let lastInteraction = Date.now();
+['pointerdown', 'keydown', 'touchstart'].forEach((ev) => window.addEventListener(ev, () => { lastInteraction = Date.now(); }, { capture: true, passive: true }));
+
+// safePath guards every API call: the path part may only contain plain
+// segments. Ids from the address bar or from server data can therefore never
+// redirect a request to another endpoint ("../" tricks), and neither can an
+// encoded slash, because "%" is not allowed either.
+function safePath(path) {
+  const p = path.split('?')[0];
+  return /^(\/[A-Za-z0-9_.-]+)+$/.test(p) && !p.split('/').some((seg) => seg === '.' || seg === '..');
+}
+
 async function request(method, path, opts = {}) {
+  if (!safePath(path)) throw new ApiError(0, 'bad_request_path');
   const headers = { ...(opts.headers || {}) };
   if (method !== 'GET' && S.csrf) headers['X-CSRF-Token'] = S.csrf;
+  if (Date.now() - lastInteraction < 90000) headers['X-User-Active'] = '1';
   let res;
   try {
     res = await fetch('/api' + path, { method, headers, body: opts.body, credentials: 'same-origin' });
@@ -102,7 +121,7 @@ async function request(method, path, opts = {}) {
   if (!res.ok) {
     let code = 'generic';
     try { code = (await res.json()).error || code; } catch { /* not json */ }
-    if (res.status === 401 && path !== '/auth/login' && S.me) setState({ me: null, csrf: '' });
+    if (res.status === 401 && !path.startsWith('/auth/') && S.me) setState({ me: null, csrf: '' });
     if (code === 'password_change_required' || code === 'mfa_setup_required') setState({ pending: code });
     throw new ApiError(res.status, code);
   }
@@ -116,8 +135,15 @@ export async function api(method, path, body) {
     opts.headers = { 'Content-Type': 'application/json' };
   }
   const res = await request(method, path, opts);
+  // Only API answers are parsed as data; a file download never is, whatever
+  // it contains.
   const ct = res.headers.get('Content-Type') || '';
-  return ct.startsWith('application/json') ? res.json() : res;
+  return ct.startsWith('application/json') && !res.headers.get('Content-Disposition') ? res.json() : res;
+}
+
+// apiSend posts a raw body (not JSON), for example a calendar file.
+export async function apiSend(method, path, body, contentType) {
+  return (await request(method, path, { body, headers: { 'Content-Type': contentType } })).json();
 }
 
 export async function uploadFile(file) {
@@ -132,8 +158,13 @@ export async function download(method, path, body, fallbackName) {
   const opts = body === undefined ? {} : { body: typeof body === 'string' ? body : JSON.stringify(body), headers: { 'Content-Type': 'application/json' } };
   const res = await request(method, path, opts);
   const cd = res.headers.get('Content-Disposition') || '';
-  const m = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(cd);
-  const name = m ? decodeURIComponent(m[1]) : fallbackName || 'download';
+  let name = fallbackName || 'download';
+  const ext = /filename\*=UTF-8''([^;]+)/i.exec(cd); // RFC 5987 form: percent-encoded
+  const plain = /filename="?([^";]+)"?/i.exec(cd);
+  try {
+    if (ext) name = decodeURIComponent(ext[1]);
+    else if (plain) name = plain[1];
+  } catch { /* keep the fallback name */ }
   const url = URL.createObjectURL(await res.blob());
   const a = document.createElement('a');
   a.href = url;
@@ -162,7 +193,8 @@ export async function act(fn, okMsg) {
 export async function loadSession() {
   try {
     const r = await api('GET', '/me');
-    setState({ me: r.user, csrf: r.csrf, pending: r.pending, org: r.org_name, maxUploadMB: r.max_upload_mb, minPassword: r.min_password, ready: true });
+    setState({ me: r.user, csrf: r.csrf, pending: r.pending, org: r.org_name, maxUploadMB: r.max_upload_mb, minPassword: r.min_password,
+      idleMinutes: r.idle_timeout_minutes, quotaMB: r.quota_mb, ready: true });
     if (r.user.locale && r.user.locale !== locale) setLocale(r.user.locale);
     applyPrefs(r.user.settings || {});
     if (!r.pending) await loadDirectory();
@@ -173,11 +205,17 @@ export async function loadSession() {
 
 export async function loadDirectory() {
   try {
-    const [users, groups, roles] = await Promise.all([api('GET', '/users'), api('GET', '/groups'), api('GET', '/roles')]);
+    const [users, groups, roles, blocks] = await Promise.all([api('GET', '/users'), api('GET', '/groups'), api('GET', '/roles'), api('GET', '/me/blocks')]);
     const userMap = {};
     users.forEach((u) => { userMap[u.id] = u; });
-    setState({ users, userMap, groups, roles: roles.roles, permissions: roles.permissions });
+    setState({ users, userMap, groups, roles: roles.roles, permissions: roles.permissions, blocks });
   } catch { /* shown elsewhere */ }
+}
+
+// setBlocked stops (or allows again) direct messages from one person.
+export async function setBlocked(id, on) {
+  if (!(await act(() => api(on ? 'PUT' : 'DELETE', '/me/blocks/' + id), t(on ? 'block.done' : 'block.undone')))) return;
+  setState({ blocks: on ? [...S.blocks.filter((x) => x !== id), id] : S.blocks.filter((x) => x !== id) });
 }
 
 export const userName = (id) => (S.userMap[id] ? S.userMap[id].display_name : id ? t('common.deleted_user') : '');
@@ -214,7 +252,16 @@ export function useLive(types, fn) {
 
 // ---------- routing (hash based) ----------
 
-const parseHash = () => (location.hash.replace(/^#\/?/, '') || 'home').split('/').map(decodeURIComponent);
+// The route comes from the address bar, so it can be chosen by whoever made
+// a link. Only plain segments are accepted (ids, section and topic names);
+// anything else shows the start page.
+function parseHash() {
+  try {
+    const parts = (location.hash.replace(/^#\/?/, '') || 'home').split('/').map(decodeURIComponent);
+    if (parts.every((p) => /^[A-Za-z0-9_-]{1,80}$/.test(p))) return parts;
+  } catch { /* malformed escape */ }
+  return ['home'];
+}
 export function useRoute() {
   const [route, setRoute] = useState(parseHash());
   useEffect(() => {
@@ -280,15 +327,85 @@ export function linkLabel(url) {
 // safeUrl guards every href built from user content.
 export const safeUrl = (u) => (/^(https?:\/\/|mailto:)/i.test(u || '') ? u : null);
 
-// linkify turns URLs and e-mail addresses in plain text into links. Text is
-// always rendered as text nodes (never as HTML).
+// ---------- internal links ----------
+
+// Things inside Samling that a text can link to: kind → [section, icon].
+// A link is written [[poll:<id>]]; the address of a page (…/#/polls/<id>)
+// pasted into a text works the same way.
+export const linkKinds = { channel: ['chat', 'chat'], document: ['documents', 'doc'], list: ['lists', 'list'], poll: ['polls', 'poll'],
+  event: ['calendar', 'calendar'], meeting: ['meetings', 'meeting'], decision: ['decisions', 'decision'], board: ['boards', 'board'] };
+const sectionKind = Object.fromEntries(Object.entries(linkKinds).map(([k, v]) => [v[0], k]));
+export const refToken = (type, id) => `[[${type}:${id}]]`;
+
+// Titles are asked for in one request per screenful and kept for a minute.
+// The server only names what this person may read.
+const refCache = new Map();
+let refQueue = [];
+function lookupRef(type, id) {
+  const key = type + ':' + id;
+  const hit = refCache.get(key);
+  if (hit && (hit.pending || Date.now() - hit.at < 60000)) return hit;
+  const entry = { pending: true, title: hit ? hit.title : '', ok: hit ? hit.ok : false };
+  refCache.set(key, entry);
+  if (refQueue.push({ type, id }) === 1) {
+    setTimeout(async () => {
+      const refs = refQueue.slice(0, 100);
+      refQueue = [];
+      let found = [];
+      try { found = await api('POST', '/links', { refs }); } catch { /* shown as unavailable */ }
+      refs.forEach((r) => refCache.set(r.type + ':' + r.id, { at: Date.now(), ok: false, title: '' }));
+      found.forEach((r) => refCache.set(r.type + ':' + r.id, { at: Date.now(), ok: true, title: r.title }));
+      notify();
+    }, 30);
+  }
+  return entry;
+}
+
+// RefLink shows a link to something in Samling by its current title. When
+// the reader has no access to it (or it is gone) the link says only that.
+export function RefLink({ type, id }) {
+  useStore();
+  const [section, icon] = linkKinds[type];
+  const r = lookupRef(type, id);
+  if (!r.ok) {
+    return r.pending ? html`<span class="ref"><${Icon} name=${icon} /> …</span>`
+      : html`<span class="ref none" title=${t('link.none_hint')}><${Icon} name="lock" /> ${t('link.none', { kind: t('link.kind_' + type) })}</span>`;
+  }
+  return html`<a class="ref" href=${'#/' + section + '/' + encodeURIComponent(id)}><${Icon} name=${icon} /> ${r.title || t('link.dm')}</a>`;
+}
+
+// internalRef recognises the address of a page of this Samling.
+function internalRef(url) {
+  try {
+    const u = new URL(url);
+    if (u.origin !== location.origin) return null;
+    const m = /^#\/([a-z]+)\/([A-Za-z0-9_-]{1,80})$/.exec(u.hash);
+    return m && sectionKind[m[1]] ? { type: sectionKind[m[1]], id: m[2] } : null;
+  } catch { return null; }
+}
+
+// refsIn lists the internal links in a text (for fields that are edited as
+// plain text, where the links are shown beside the field).
+export function refsIn(text) {
+  const out = [], seen = new Set();
+  for (const part of linkify(text || '')) {
+    if (part && part.type === RefLink && !seen.has(part.props.type + part.props.id)) { seen.add(part.props.type + part.props.id); out.push(part); }
+  }
+  return out;
+}
+
+// linkify turns URLs, e-mail addresses and internal links in plain text into
+// links. Text is always rendered as text nodes (never as HTML).
 export function linkify(text) {
   const out = [];
-  const re = /(https?:\/\/[^\s<>"']+[^\s<>"'.,;:!?)\]])|([\w.+-]+@[\w-]+(?:\.[\w-]+)+)/g;
+  const re = /(https?:\/\/[^\s<>"']+[^\s<>"'.,;:!?)\]])|([\w.+-]+@[\w-]+(?:\.[\w-]+)+)|\[\[(channel|document|list|poll|event|meeting|decision|board):([A-Za-z0-9_-]{1,80})\]\]/g;
   let last = 0, m;
   while ((m = re.exec(text))) {
     if (m.index > last) out.push(text.slice(last, m.index));
-    if (m[1]) {
+    const ref = m[3] ? { type: m[3], id: m[4] } : m[1] ? internalRef(m[1]) : null;
+    if (ref) {
+      out.push(html`<${RefLink} type=${ref.type} id=${ref.id} />`);
+    } else if (m[1]) {
       const label = linkLabel(m[1]);
       out.push(html`<a href=${m[1]} target="_blank" rel="noopener noreferrer" class=${label ? 'meetlink' : ''}>${label ? html`<${Icon} name="video" /> ${t('common.join', { name: label })}` : m[1]}</a>`);
     } else {
@@ -339,6 +456,16 @@ const paths = {
   copy: 'M9 9h10v11H9zM5 15V4h10',
   globe: 'M12 21a9 9 0 100-18 9 9 0 000 18zM3 12h18M12 3c3 3.500 3 14.500 0 18M12 3c-3 3.500-3 14.500 0 18',
   mail: 'M4 6h16v12H4zM4 7l8 6 8-6',
+  help: 'M12 21a9 9 0 100-18 9 9 0 000 18zM9.500 9.500a2.500 2.500 0 114 2c-.900.600-1.500 1.200-1.500 2.300M12 17h.01',
+  smile: 'M12 21a9 9 0 100-18 9 9 0 000 18zM8.500 14.500a4.500 4.500 0 007 0M9 9.500h.01M15 9.500h.01',
+  camera: 'M4 8h3.500L9 5.500h6L16.500 8H20v11H4zM12 16.500a3 3 0 100-6 3 3 0 000 6z',
+  scan: 'M4 8V5h3M17 5h3v3M20 16v3h-3M7 19H4v-3M8 10h8M8 14h5',
+  reply: 'M9 7l-5 5 5 5M4 12h10a6 6 0 016 6v1',
+  block: 'M12 21a9 9 0 100-18 9 9 0 000 18zM5.600 5.600l12.800 12.800',
+  image: 'M4 5h16v14H4zM4 16l5-5 4 4 3-3 4 4M15 9.500h.01',
+  bell: 'M6 16V11a6 6 0 0112 0v5l1.500 2h-15zM10 20.500a2 2 0 004 0',
+  link: 'M10 14a4 4 0 005.700 0l3-3a4 4 0 00-5.700-5.700l-1 1M14 10a4 4 0 00-5.700 0l-3 3a4 4 0 005.700 5.700l1-1',
+  key: 'M15 9a4 4 0 11-3.900 5H8v2H6v2H3v-3l6.100-6.100A4 4 0 0115 9zM16 8h.01',
 };
 export function Icon({ name, label }) {
   return html`<svg class="icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.800"
@@ -408,10 +535,13 @@ export function useForm(initial) {
 }
 
 export function Page({ title, actions, children, back }) {
+  // Every page links to the online help topic of its section.
+  const section = (location.hash.replace(/^#\/?/, '') || 'home').split('/')[0];
+  const helpLink = section !== 'help' && html`<a class="icon-btn no-print" href=${'#/help/' + encodeURIComponent(section)} aria-label=${t('nav.help')} title=${t('nav.help')}><${Icon} name="help" /></a>`;
   return html`<section class="page">
     <header class="page-head">
       ${back && html`<a class="icon-btn" href=${back} aria-label=${t('common.back')}><${Icon} name="left" /></a>`}
-      <h1>${title}</h1><div class="actions">${actions}</div>
+      <h1>${title}</h1><div class="actions">${actions}${helpLink}</div>
     </header>${children}</section>`;
 }
 

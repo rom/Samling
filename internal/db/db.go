@@ -83,6 +83,8 @@ func (d *DB) Rebind(q string) string {
 // Q is the query interface shared by DB and Tx.
 type Q interface {
 	Exec(ctx context.Context, q string, args ...any) error
+	// ExecN is Exec that also reports the number of affected rows.
+	ExecN(ctx context.Context, q string, args ...any) (int64, error)
 	Row(ctx context.Context, q string, args ...any) *sql.Row
 	Each(ctx context.Context, q string, args []any, fn func(*sql.Rows) error) error
 }
@@ -112,6 +114,14 @@ func (d *DB) Exec(ctx context.Context, q string, args ...any) error {
 	return err
 }
 
+func (d *DB) ExecN(ctx context.Context, q string, args ...any) (int64, error) {
+	res, err := d.DB.ExecContext(ctx, d.Rebind(q), args...)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
 func (d *DB) Row(ctx context.Context, q string, args ...any) *sql.Row {
 	return d.DB.QueryRowContext(ctx, d.Rebind(q), args...)
 }
@@ -129,6 +139,14 @@ type Tx struct {
 func (t *Tx) Exec(ctx context.Context, q string, args ...any) error {
 	_, err := t.tx.ExecContext(ctx, t.d.Rebind(q), args...)
 	return err
+}
+
+func (t *Tx) ExecN(ctx context.Context, q string, args ...any) (int64, error) {
+	res, err := t.tx.ExecContext(ctx, t.d.Rebind(q), args...)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
 }
 
 func (t *Tx) Row(ctx context.Context, q string, args ...any) *sql.Row {

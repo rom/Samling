@@ -1,10 +1,20 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="96" fill="#17243a"/>
-  <g fill="none" stroke="#ffffff" stroke-width="30" stroke-linecap="round">
-    <circle cx="256" cy="256" r="120"/>
+  <title>Samling</title>
+  <!-- Six people gathered in a circle around a shared centre. The mark stays inside the central 80 % (maskable safe zone). -->
+  <rect width="512" height="512" rx="112" fill="#221B3A"/>
+  <g fill="none" stroke-width="40" stroke-linecap="round">
+    <circle cx="256" cy="152" r="36" fill="#F25C54"/>
+    <path d="M192.9 91.7A176 176 0 0 1 319.1 91.7" stroke="#F25C54"/>
+    <circle cx="346.1" cy="204" r="36" fill="#F7931E"/>
+    <path d="M366.8 119.2A176 176 0 0 1 429.8 228.5" stroke="#F7931E"/>
+    <circle cx="346.1" cy="308" r="36" fill="#FFC53D"/>
+    <path d="M429.8 283.5A176 176 0 0 1 366.8 392.8" stroke="#FFC53D"/>
+    <circle cx="256" cy="360" r="36" fill="#3DBE8B"/>
+    <path d="M319.1 420.3A176 176 0 0 1 192.9 420.3" stroke="#3DBE8B"/>
+    <circle cx="165.9" cy="308" r="36" fill="#2FA4D7"/>
+    <path d="M145.2 392.8A176 176 0 0 1 82.2 283.5" stroke="#2FA4D7"/>
+    <circle cx="165.9" cy="204" r="36" fill="#C7508F"/>
+    <path d="M82.2 228.5A176 176 0 0 1 145.2 119.2" stroke="#C7508F"/>
+    <circle cx="256" cy="256" r="26" fill="#FFF3DC"/>
   </g>
-  <g fill="#7aa7ff">
-    <circle cx="256" cy="136" r="38"/><circle cx="360" cy="316" r="38"/><circle cx="152" cy="316" r="38"/>
-  </g>
-  <circle cx="256" cy="256" r="34" fill="#ffffff"/>
 </svg>

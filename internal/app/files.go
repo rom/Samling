@@ -124,7 +124,7 @@ func (a *App) canReadFile(c *Ctx, fileID, uploader string) (bool, error) {
 			if err := r.Scan(&id); err != nil {
 				return err
 			}
-			refs = append(refs, Event{typ, id})
+			refs = append(refs, Event{Type: typ, ID: id})
 			return nil
 		}
 	}
@@ -156,7 +156,7 @@ func (a *App) canReadFile(c *Ctx, fileID, uploader string) (bool, error) {
 	}
 	for _, x := range atts {
 		if rt, rid, err := a.attachmentACL(c.ctx(), x.typ, x.id); err == nil {
-			refs = append(refs, Event{rt, rid})
+			refs = append(refs, Event{Type: rt, ID: rid})
 		}
 	}
 	for _, ref := range refs {

@@ -40,6 +40,9 @@ Status values: **Implemented**, **Partial** (works, with the stated gap),
 | F27 | Comment on chat messages | Implemented | One level of comments under a message. |
 | F28 | Bold, italic and underlined text in messages | Implemented | Plain-text marks rendered by the client; toolbar and Ctrl+B/I/U. |
 | F29 | Emoji in messages and reactions (thumbs up, heart, crying, …) | Implemented | Emoji palette for text; 16 reactions. |
+| F30 | Internal links, e.g. from a chat message to a poll or from meeting notes to a board | Implemented | `[[type:id]]` or a pasted page address; picker in the chat and under text fields. Titles are resolved per reader, only for what they can read. Exported minutes contain the code as text. |
+| F31 | Mentions (`@username`) that notify the person, respecting access control | Implemented | `internal/app/links.go`. In chat messages and comments. Only people who can read the conversation are notified; checked again when notifications are listed. In-app notifications (menu count, Mentions page, live notice); no e-mail or push. |
+| F32 | Tag, build and publish releases | Implemented | `make tag`, `make release`, `make publish`, `.github/workflows/release.yml`. The workflow has not been run yet. |
 | F20a | Script to set up the system | Implemented | `scripts/setup.sh`. Not executed end-to-end in the development environment (no systemd as PID 1); its building blocks were tested individually, see [testing.md](testing.md). |
 | F20b | Script to create self-signed certificates | Implemented | `scripts/gen-selfsigned-cert.sh` (tested). |
 | F20c | Script to obtain and renew Let's Encrypt certificates | Implemented | `scripts/letsencrypt.sh` (certbot). Not run against Let's Encrypt in development. |

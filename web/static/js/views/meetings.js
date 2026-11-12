@@ -1,7 +1,7 @@
 import { html, useState, useEffect, t, api, act, download, useLoad, go, can, userName, linkLabel, safeUrl, fmtDateTime, toInput, fromInput,
   Icon, Modal, Field, useForm, ShareEditor, ShareButton, Badge, Page, Empty, Loading, confirmDelete } from '../lib.js';
 import { eventWhen } from './calendar.js';
-import { Attachments } from '../media.js';
+import { Attachments, TextTools } from '../media.js';
 
 const statusBadge = (m) => html`<${Badge} kind=${m.status === 'finalized' ? 'ok' : m.status === 'in_progress' ? 'warn' : 'info'}>${t('meet.status_' + m.status)}<//>`;
 
@@ -109,6 +109,7 @@ function Detail({ id }) {
       <${Field} label=${t('cal.location')}><input value=${m.location} onInput=${set('location')} disabled=${locked} /><//>
       <${Field} label=${t('cal.link')} hint=${t('cal.link_hint')}><input type="url" value=${m.url} onInput=${set('url')} disabled=${locked} placeholder="https://" /><//>
       <${Field} label=${t('common.description')}><textarea value=${m.description} onInput=${set('description')} disabled=${locked}></textarea><//>
+      <${TextTools} scan=${false} disabled=${locked} value=${m.description} onChange=${(v) => { setM({ ...m, description: v }); setDirty(true); }} />
       <p class="muted small"><${Icon} name="calendar" /> ${t('meet.calendar_note')}</p>${saveBar}</div>
       <div class="card"><${Attachments} type="meeting" id=${id} canEdit=${m.level >= 2 && m.status !== 'finalized'} /></div>`}
 
@@ -125,6 +126,7 @@ function Detail({ id }) {
           <${Field} label=${t('meet.minutes')}><input type="number" min="0" max="600" value=${it.duration_min || ''} onInput=${(e) => setItem(i, 'duration_min', e.target.value)} disabled=${locked} /><//>
         </div>
         <${Field} label=${t('meet.background')}><textarea value=${it.description || ''} onInput=${(e) => setItem(i, 'description', e.target.value)} disabled=${locked}></textarea><//>
+        <${TextTools} scan=${false} disabled=${locked} value=${it.description || ''} onChange=${(v) => setItem(i, 'description', v)} />
       </div>`)}
       <div class="row">${!locked && html`<button onClick=${() => { setAgenda([...agenda, { title: '', description: '', presenter: '', duration_min: 0, notes: '' }]); setDirty(true); }}>
         <${Icon} name="plus" /> ${t('meet.add_item')}</button>`}<span class="muted right">${t('meet.total', { n: total })}</span></div>
@@ -139,6 +141,7 @@ function Detail({ id }) {
         <div class="head"><span class="num">§ ${i + 1}</span><h3 class="grow">${it.title}</h3></div>
         ${it.description && html`<p class="muted small pre">${it.description}</p>`}
         <${Field} label=${t('meet.notes')}><textarea rows="3" value=${it.notes || ''} onInput=${(e) => setItem(i, 'notes', e.target.value)} disabled=${locked}></textarea><//>
+        <${TextTools} disabled=${locked} value=${it.notes || ''} onChange=${(v) => setItem(i, 'notes', v)} />
         ${it.decision_id ? html`<a href=${'#/decisions/' + it.decision_id} class="badge info"><${Icon} name="decision" /> ${t('meet.decision_recorded')}</a>`
           : !locked && can('decisions.create') && html`<button onClick=${() => recordDecision(it)}><${Icon} name="decision" /> ${t('dec.record')}</button>`}
       </div>`)}

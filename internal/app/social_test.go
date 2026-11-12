@@ -284,3 +284,106 @@ func TestAttachments(t *testing.T) {
 		t.Fatal("attachments of a deleted card remain")
 	}
 }
+
+func TestMentionsRespectAccess(t *testing.T) {
+	e := newEnv(t)
+	leader := e.user("lena", RoleLeader)
+	a, r, c := e.user("anna"), e.user("robert"), e.user("cia")
+	type inbox struct {
+		Unread int
+		Items  []Notification
+	}
+	get := func(cl *client) inbox {
+		var in inbox
+		cl.ok("GET", "/api/notifications", nil, &in)
+		return in
+	}
+	// A channel robert can read: he is told, once, with the text.
+	open := leader.id("POST", "/api/channels", M{"name": "open", "shares": []M{share("all", "", 2)}})
+	m1 := a.id("POST", "/api/channels/"+open+"/messages", M{"body": "Can you bring the nets, @robert? Mail me at anna@robert.example. @nobody @anna @ROBERT."})
+	in := get(r)
+	if in.Unread != 1 || len(in.Items) != 1 || in.Items[0].ActorID != a.ID || in.Items[0].ChannelID != open || in.Items[0].MessageID != m1 ||
+		in.Items[0].Channel != "open" || !strings.Contains(in.Items[0].Snippet, "bring the nets") || in.Items[0].Read {
+		t.Fatalf("robert's mentions: %+v", in)
+	}
+	if get(a).Unread != 0 {
+		t.Fatal("mentioning yourself must not notify")
+	}
+	// A channel robert cannot read, and a direct conversation he is not part of: nothing.
+	closed := leader.id("POST", "/api/channels", M{"name": "board", "shares": []M{share("user", a.ID, 2)}})
+	a.ok("POST", "/api/channels/"+closed+"/messages", M{"body": "@robert should not hear about this"}, nil)
+	dm := a.id("POST", "/api/dm", M{"user_ids": []string{c.ID}})
+	a.ok("POST", "/api/channels/"+dm+"/messages", M{"body": "between us: @robert is getting a prize, @cia"}, nil)
+	if in := get(r); in.Unread != 1 || len(in.Items) != 1 {
+		t.Fatalf("robert was told about conversations he cannot read: %+v", in)
+	}
+	// The participant of the direct conversation is told.
+	if in := get(c); in.Unread != 1 || in.Items[0].Channel != "" || in.Items[0].ChannelID != dm {
+		t.Fatalf("cia's mentions: %+v", in)
+	}
+	// Nobody can read or mark somebody else's notifications.
+	c.ok("POST", "/api/notifications/read", M{"ids": []string{in.Items[0].ID}}, nil)
+	if get(r).Unread != 1 {
+		t.Fatal("another person marked robert's mention as read")
+	}
+	// An edit that adds a mention notifies; repeating one does not notify twice.
+	m2 := a.id("POST", "/api/channels/"+open+"/messages", M{"body": "The nets are in the shed"})
+	a.ok("PATCH", "/api/messages/"+m2, M{"body": "The nets are in the shed, @robert"}, nil)
+	a.ok("PATCH", "/api/messages/"+m1, M{"body": "Can you bring the nets and the balls, @robert?"}, nil)
+	if in := get(r); in.Unread != 2 || len(in.Items) != 2 {
+		t.Fatalf("after edits: %+v", in)
+	}
+	// Opening the conversation marks its mentions as read.
+	r.ok("POST", "/api/channels/"+open+"/read", nil, nil)
+	if in := get(r); in.Unread != 0 || len(in.Items) != 2 || !in.Items[0].Read {
+		t.Fatalf("after reading: %+v", in)
+	}
+	// When access is withdrawn the mention disappears, and so does one whose message is deleted.
+	limited := leader.id("POST", "/api/channels", M{"name": "team", "shares": []M{share("user", a.ID, 2), share("user", r.ID, 1)}})
+	m3 := a.id("POST", "/api/channels/"+limited+"/messages", M{"body": "@robert welcome to the team"})
+	if get(r).Unread != 1 {
+		t.Fatal("mention in a shared channel")
+	}
+	leader.ok("PUT", "/api/acl/channel/"+limited, []M{share("user", a.ID, 2)}, nil)
+	if in := get(r); in.Unread != 0 || len(in.Items) != 2 {
+		t.Fatalf("mention still shown after access was withdrawn: %+v", in)
+	}
+	leader.ok("PUT", "/api/acl/channel/"+limited, []M{share("user", a.ID, 2), share("user", r.ID, 1)}, nil)
+	a.ok("DELETE", "/api/messages/"+m3, nil, nil)
+	if in := get(r); in.Unread != 0 || len(in.Items) != 2 {
+		t.Fatalf("mention of a deleted message: %+v", in)
+	}
+	// Comments mention too.
+	a.ok("POST", "/api/channels/"+open+"/messages", M{"body": "thanks @robert!", "parent_id": m1}, nil)
+	if get(r).Unread != 1 {
+		t.Fatal("mention in a comment")
+	}
+	r.ok("POST", "/api/notifications/read", M{}, nil)
+	if get(r).Unread != 0 {
+		t.Fatal("mark all as read")
+	}
+}
+
+func TestInternalLinksResolveOnlyWhatTheReaderMaySee(t *testing.T) {
+	e := newEnv(t)
+	leader := e.user("lena", RoleLeader)
+	a, b := e.user("anna"), e.user("bert")
+	poll := a.id("POST", "/api/polls", M{"title": "Which day?", "kind": "single", "options": []string{"a", "b"}, "shares": all()})
+	board := a.id("POST", "/api/boards", M{"title": "Secret plans", "columns": []string{"To do"}})
+	dec := leader.id("POST", "/api/decisions", M{"title": "Fee", "shares": all()})
+	dm := a.id("POST", "/api/dm", M{"user_ids": []string{leader.ID}})
+	refs := M{"refs": []M{{"type": "poll", "id": poll}, {"type": "board", "id": board}, {"type": "decision", "id": dec}, {"type": "channel", "id": dm},
+		{"type": "board", "id": "missing"}, {"type": "user", "id": a.ID}, {"type": "poll", "id": "x' OR 1=1 --"}}}
+	var got []LinkRef
+	b.ok("POST", "/api/links", refs, &got)
+	if len(got) != 2 || got[0].Title != "Which day?" || !strings.HasSuffix(got[1].Title, " Fee") {
+		t.Fatalf("bert resolves: %+v", got)
+	}
+	a.ok("POST", "/api/links", refs, &got)
+	if len(got) != 4 || got[1].Title != "Secret plans" || got[3].Title != "" {
+		t.Fatalf("anna resolves: %+v", got)
+	}
+	// The link itself is ordinary text in a message, and stays as written.
+	ch := leader.id("POST", "/api/channels", M{"name": "links", "shares": all()})
+	leader.ok("POST", "/api/channels/"+ch+"/messages", M{"body": "Vote here: [[poll:" + poll + "]]"}, nil)
+}

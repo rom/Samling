@@ -192,7 +192,7 @@ func (a *App) hCreateMeeting(c *Ctx) error {
 		return err
 	}
 	a.logAct(c, false, "meeting.created", "meeting", id, in.Title)
-	a.hub.publish(Event{"meeting", id})
+	a.hub.publish(Event{Type: "meeting", ID: id})
 	return c.JSON(map[string]string{"id": id})
 }
 
@@ -239,7 +239,7 @@ func (a *App) hUpdateMeeting(c *Ctx) error {
 		return err
 	}
 	a.logAct(c, false, "meeting.updated", "meeting", id, in.Title)
-	a.hub.publish(Event{"meeting", id})
+	a.hub.publish(Event{Type: "meeting", ID: id})
 	return c.OK()
 }
 
@@ -295,7 +295,7 @@ func (a *App) hSetAgenda(c *Ctx) error {
 	if err != nil {
 		return err
 	}
-	a.hub.publish(Event{"meeting", id})
+	a.hub.publish(Event{Type: "meeting", ID: id})
 	return c.OK()
 }
 
@@ -315,7 +315,7 @@ func (a *App) hFinalizeMeeting(c *Ctx) error {
 		return err
 	}
 	a.logAct(c, true, map[bool]string{true: "meeting.reopened", false: "meeting.finalized"}[reopen], "meeting", id, "")
-	a.hub.publish(Event{"meeting", id})
+	a.hub.publish(Event{Type: "meeting", ID: id})
 	return c.OK()
 }
 
@@ -528,7 +528,7 @@ func (a *App) hCreateDecision(c *Ctx) error {
 		return err
 	}
 	a.logAct(c, true, "decision.created", "decision", id, number)
-	a.hub.publish(Event{"decision", id})
+	a.hub.publish(Event{Type: "decision", ID: id})
 	return c.JSON(map[string]string{"id": id, "number": number})
 }
 
@@ -600,7 +600,7 @@ func (a *App) hReviseDecision(c *Ctx) error {
 	var number string
 	_ = a.DB.Row(c.ctx(), `SELECT number FROM decisions WHERE id=?`, id).Scan(&number)
 	a.logAct(c, true, "decision.revised", "decision", id, number+" "+in.Status)
-	a.hub.publish(Event{"decision", id})
+	a.hub.publish(Event{Type: "decision", ID: id})
 	return c.OK()
 }
 

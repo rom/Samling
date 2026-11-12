@@ -1,4 +1,4 @@
-import { html, useState, useRef, useStore, t, api, apiSend, act, download, useLoad, useLive, can, getLocale, userName, linkify, linkLabel, safeUrl, fmtDate, fmtTime,
+import { html, useState, useEffect, useRef, useStore, go, t, api, apiSend, act, download, useLoad, useLive, can, getLocale, userName, linkify, linkLabel, safeUrl, fmtDate, fmtTime,
   toInput, fromInput, toDateInput, fromDateInput, Icon, Modal, Field, useForm, ShareEditor, ShareButton, SharedBadge, Page, Loading, confirmDelete, toast } from '../lib.js';
 import { Attachments, ScanInto } from '../media.js';
 
@@ -82,7 +82,7 @@ function EventView({ event: e, me, onClose, onEdit }) {
     </div><//>`;
 }
 
-export function Calendar() {
+export function Calendar({ route }) {
   const s = useStore();
   const [month, setMonth] = useState(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); });
   const [modal, setModal] = useState(null);
@@ -107,7 +107,17 @@ export function Calendar() {
     if (r) { toast(t('cal.imported', { n: r.imported })); st.reload(); }
     e.target.value = '';
   };
-  const done = (changed) => { setModal(null); if (changed) st.reload(); };
+  const done = (changed) => { setModal(null); if (changed) st.reload(); if (route[1]) go('calendar'); };
+  // A link to one event (#/calendar/<id>) opens that event.
+  useEffect(() => {
+    if (!route[1]) return;
+    api('GET', '/calendar?event=' + route[1]).then((evs) => {
+      if (!evs.length) { toast(t('link.none_hint'), 'error'); go('calendar'); return; }
+      const d = new Date(evs[0].starts_at * 1000);
+      setMonth(new Date(d.getFullYear(), d.getMonth(), 1));
+      setModal({ view: evs[0] });
+    }).catch(() => go('calendar'));
+  }, [route[1]]);
   const upcoming = (st.data || []).filter((e) => e.ends_at + (e.all_day ? DAY : 0) >= Date.now() / 1000).slice(0, 8);
   return html`<${Page} title=${t('nav.calendar')} actions=${html`
       <input type="file" accept=".ics,text/calendar" hidden ref=${fileInput} onChange=${importIcs} />

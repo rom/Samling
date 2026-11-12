@@ -1,4 +1,4 @@
-import { html, useState, useRef, t, api, act, download, uploadFile, useLoad, go, userName, fmtDateTime, fmtSize, Icon, Modal, Field, useForm,
+import { html, useState, useRef, t, api, act, download, uploadFile, useLoad, go, userName, linkify, fmtDateTime, fmtSize, Icon, Modal, Field, useForm,
   ShareEditor, ShareButton, SharedBadge, Page, Empty, Loading, confirmDelete } from '../lib.js';
 import { CameraButtons, FileView, isImage } from '../media.js';
 
@@ -64,7 +64,7 @@ function Detail({ id }) {
       <div class="card">
         <div class="row"><${SharedBadge} shared=${d.shared} /><span class="muted">${d.folder ? '/' + d.folder : t('docs.root')}</span>
           <span class="muted">· ${t('docs.owner')}: ${userName(d.owner_id)}</span></div>
-        ${d.description && html`<p class="pre">${d.description}</p>`}
+        ${d.description && html`<p class="pre">${linkify(d.description)}</p>`}
         ${current && isImage(current.file) && html`<div class="files"><${FileView} file=${current.file} /></div>`}
       </div>
       <div class="card"><h2>${t('docs.versions')}</h2>

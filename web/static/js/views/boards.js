@@ -1,4 +1,4 @@
-import { html, useState, useStore, t, api, act, useLoad, useLive, go, userName, fmtDate, fmtDateTime, toDateInput, fromDateInput, Icon, Modal, Field, useForm,
+import { html, useState, useStore, t, api, act, useLoad, useLive, go, userName, linkify, fmtDate, fmtDateTime, toDateInput, fromDateInput, Icon, Modal, Field, useForm,
   ShareEditor, ShareButton, SharedBadge, Page, Empty, Loading, confirmDelete } from '../lib.js';
 import { Avatar, Attachments, ColorPicker, markClass, ScanInto } from '../media.js';
 
@@ -89,7 +89,7 @@ function Detail({ id }) {
   return html`<${Page} title=${b.title} back="#/boards" actions=${canManage && html`
       <button onClick=${addColumn}><${Icon} name="plus" /> ${t('boards.add_column')}</button>
       <${ShareButton} type="board" id=${id} onDone=${st.reload} /><button class="danger" onClick=${del}><${Icon} name="trash" /> ${t('common.delete')}</button>`}>
-    ${b.description && html`<p class="muted pre">${b.description}</p>`}
+    ${b.description && html`<p class="muted pre">${linkify(b.description)}</p>`}
     <div class=${'board-bar' + markClass(b.color)}>${canManage ? html`<span class="small muted">${t('boards.color')}</span><${ColorPicker} value=${b.color} onChange=${recolor} />`
       : b.color && html`<span class="small muted">${t('color.' + b.color)}</span>`}</div>
     <div class="kanban">${b.columns.map((col, ci) => {

@@ -1,6 +1,7 @@
 // Pictures, the camera, text recognition, text formatting, emoji and colour
 // marks: the building blocks shared by chat, lists, boards and the rest.
-import { html, useState, useEffect, useRef, S, t, api, act, uploadFile, download, useLoad, linkify, fmtSize, Icon, Modal, toast } from './lib.js';
+import { html, useState, useEffect, useRef, S, t, api, act, uploadFile, download, useLoad, linkify, fmtSize, Icon, Modal, toast,
+  linkKinds, refToken, refsIn } from './lib.js';
 
 const idOK = (id) => /^[A-Za-z0-9_-]{1,80}$/.test(id || '');
 export const imageUrl = (id) => (idOK(id) ? '/api/files/' + id + '/image' : '');
@@ -28,19 +29,46 @@ export function Avatar({ id, user, size }) {
 // __underlined__. The marks are turned into elements here; the text itself is
 // always inserted as text, never as HTML.
 const marks = /\*\*\*([^\s*](?:[^*\n]*[^\s*])?)\*\*\*|\*\*([^\s*](?:[^*\n]*[^\s*])?)\*\*|__([^\s_](?:[^_\n]*[^\s_])?)__|\*([^\s*](?:[^*\n]*[^\s*])?)\*/g;
+// A mention is "@username". It is shown with the person's name when the
+// username exists; otherwise the text is left as it is.
+const mentionRe = /(^|[^A-Za-z0-9._@/-])@([A-Za-z0-9][A-Za-z0-9._-]{1,31})/g;
+let byUsername = null, byUsernameFor = null;
+function findUser(name) {
+  if (byUsernameFor !== S.users) { byUsernameFor = S.users; byUsername = Object.fromEntries(S.users.map((u) => [u.username, u])); }
+  for (let n = name.toLowerCase(); n.length >= 2; n = n.slice(0, -1)) {
+    if (byUsername[n]) return [byUsername[n], n.length];
+    if (!/[._-]$/.test(n)) break; // only trailing punctuation may be dropped ("@anna.")
+  }
+  return null;
+}
+function mentions(text) {
+  const out = [];
+  let last = 0;
+  for (const m of text.matchAll(mentionRe)) {
+    const hit = findUser(m[2]);
+    if (!hit) continue;
+    const at = m.index + m[1].length;
+    if (at > last) out.push(text.slice(last, at));
+    out.push(html`<span class=${'mention' + (S.me && hit[0].id === S.me.id ? ' me' : '')} title=${'@' + hit[0].username}>@${hit[0].display_name}</span>`);
+    last = at + 1 + hit[1];
+  }
+  if (last < text.length) out.push(text.slice(last));
+  return out;
+}
 function format(text, depth = 0) {
   if (depth > 3) return [text];
   const out = [];
   let last = 0;
+  const plain = (s) => { if (depth === 0 || s) out.push(...mentions(s)); };
   for (const m of text.matchAll(marks)) {
-    if (m.index > last) out.push(text.slice(last, m.index));
+    if (m.index > last) plain(text.slice(last, m.index));
     if (m[1] !== undefined) out.push(html`<strong><em>${format(m[1], depth + 1)}</em></strong>`);
     else if (m[2] !== undefined) out.push(html`<strong>${format(m[2], depth + 1)}</strong>`);
     else if (m[3] !== undefined) out.push(html`<u>${format(m[3], depth + 1)}</u>`);
     else out.push(html`<em>${format(m[4], depth + 1)}</em>`);
     last = m.index + m[0].length;
   }
-  if (last < text.length) out.push(text.slice(last));
+  if (last < text.length) plain(text.slice(last));
   return out;
 }
 export const rich = (text) => linkify(text || '').flatMap((part) => (typeof part === 'string' ? format(part) : [part]));
@@ -210,7 +238,7 @@ export function CameraButtons({ onPhoto, onText, labels, disabled, square }) {
 // ScanInto is the "scan text" button for a form field: the recognised text
 // is added to what the field already holds.
 export function ScanInto({ value, onChange }) {
-  return html`<div class="field-tools"><${CameraButtons} labels onText=${(text) => onChange(value ? value.replace(/\s+$/, '') + '\n' + text : text)} /></div>`;
+  return html`<${TextTools} value=${value} onChange=${onChange} />`;
 }
 
 // ---------- files and pictures ----------
@@ -262,6 +290,59 @@ export function Attachments({ type, id, canEdit, onText }) {
       <button type="button" disabled=${busy} onClick=${() => input.current.click()}><${Icon} name="clip" /> ${t('att.add')}</button>
       <${CameraButtons} labels disabled=${busy} onPhoto=${(f) => add([f])} onText=${onText} /></div>`}
   </div>`;
+}
+
+// ---------- internal links ----------
+
+// LinkButton lets the person pick something in Samling – a poll, a board, a
+// document … – and reports the link text to insert.
+const linkSources = [['poll', '/polls'], ['board', '/boards'], ['document', '/documents'], ['list', '/lists'], ['meeting', '/meetings'], ['decision', '/decisions'],
+  ['event', '/calendar?from=' + Math.floor(Date.now() / 1000 - 30 * 86400)], ['channel', '/channels']];
+function LinkPicker({ onPick, onClose }) {
+  const [items, setItems] = useState(null);
+  const [q, setQ] = useState('');
+  const [kind, setKind] = useState('');
+  useEffect(() => {
+    Promise.all(linkSources.map(([type, path]) => api('GET', path).then((rows) => rows.filter((r) => type !== 'channel' || r.kind === 'channel')
+      .map((r) => ({ type, id: r.id, title: type === 'decision' ? r.number + ' ' + r.title : r.title || r.name }))).catch(() => [])))
+      .then((all) => setItems(all.flat()));
+  }, []);
+  const shown = (items || []).filter((x) => (!kind || x.type === kind) && x.title.toLowerCase().includes(q.toLowerCase())).slice(0, 60);
+  return html`<${Modal} title=${t('link.insert')} onClose=${onClose}>
+    <p class="muted small">${t('link.hint')}</p>
+    <div class="row">
+      <input class="grow" type="search" value=${q} onInput=${(e) => setQ(e.target.value)} placeholder=${t('common.filter')} aria-label=${t('common.filter')} />
+      <select value=${kind} onChange=${(e) => setKind(e.target.value)} aria-label=${t('link.kind')}><option value="">${t('link.all')}</option>
+        ${linkSources.map(([type]) => html`<option value=${type}>${t('link.kind_' + type)}</option>`)}</select></div>
+    ${items === null ? html`<div class="loading">${t('common.loading')}</div>` : html`<div class="rows link-list">
+      ${shown.map((x) => html`<button type="button" key=${x.type + x.id} onClick=${() => { onPick(refToken(x.type, x.id)); onClose(); }}>
+        <${Icon} name=${linkKinds[x.type][1]} /><span class="grow">${x.title}</span><span class="muted small">${t('link.kind_' + x.type)}</span></button>`)}
+      ${shown.length === 0 && html`<div class="muted">${t('common.nothing')}</div>`}</div>`}
+  <//>`;
+}
+export function LinkButton({ onPick, labels, disabled }) {
+  const [open, setOpen] = useState(false);
+  return html`<button type="button" class=${labels ? '' : 'icon-btn'} disabled=${disabled} aria-label=${labels ? null : t('link.insert')} title=${t('link.insert')}
+      onClick=${() => setOpen(true)}><${Icon} name="link" />${labels ? ' ' + t('link.insert') : ''}</button>
+    ${open && html`<${LinkPicker} onPick=${onPick} onClose=${() => setOpen(false)} />`}`;
+}
+
+// Refs shows the internal links found in a text that is edited as plain
+// text (meeting notes, descriptions), so that they can be followed.
+export function Refs({ text }) {
+  const refs = refsIn(text);
+  if (!refs.length) return null;
+  return html`<div class="refs" role="group" aria-label=${t('link.in_text')}><span class="muted small">${t('link.in_text')}:</span> ${refs}</div>`;
+}
+
+// TextTools sits under a text field: scan text into it, insert a link, and
+// the links the text already holds.
+export function TextTools({ value, onChange, scan = true, disabled }) {
+  const add = (x, sep) => onChange(value ? value.replace(/\s+$/, '') + sep + x : x);
+  return html`<div class="field-tools">
+    ${!disabled && scan && html`<${CameraButtons} labels onText=${(x) => add(x, '\n')} />`}
+    ${!disabled && html`<${LinkButton} labels onPick=${(x) => add(x, ' ')} />`}
+    <${Refs} text=${value} /></div>`;
 }
 
 // ---------- colour marks ----------

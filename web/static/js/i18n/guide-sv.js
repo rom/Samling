@@ -471,6 +471,33 @@ Be en administratör att ta bort ditt konto. Då raderas dina personuppgifter oc
 
 > Samling installeras och drivs av din egen organisation. Fråga din administratör om du vill veta var servern finns eller vem som ansvarar för personuppgifterna.`,
 
+  'help.mentions.title': 'Omnämnanden och länkar',
+  'help.mentions.intro': 'Få någons uppmärksamhet med @, och länka till omröstningar, tavlor och annat i Samling.',
+  'help.mentions.body': `# Nämn någon
+1. Skriv @ i ett chattmeddelande eller en kommentar och börja skriva ett namn. Välj personen i listan, eller skriv användarnamnet själv – till exempel @robert.
+2. Skicka meddelandet. Namnet markeras, och personen får en avisering.
+
+Personen ser aviseringen som en siffra bredvid [[nav.mentions]] i menyn. [[nav.mentions]] visar meddelandena; välj ett för att öppna samtalet. När samtalet öppnas markeras dess omnämnanden som lästa, och [[mention.read_all]] rensar alla.
+
+# Vem får veta
+- Bara personer som kan läsa samtalet får en avisering. Om du nämner någon i en kanal som personen inte har åtkomst till, eller i ett direktmeddelande som personen inte deltar i, händer ingenting: personen får ingen avisering och får inte veta något om meddelandet.
+- Ett omnämnande ger aldrig någon åtkomst.
+- Om en person senare förlorar åtkomsten till kanalen, eller om meddelandet tas bort, försvinner omnämnandet ur personens lista.
+- Du får ingen avisering när du nämner dig själv.
+
+# Länka till något i Samling
+1. Välj [[link.insert]] – kedjesymbolen ovanför meddelandefältet i chatten, eller under textfälten i möten, kalenderhändelser, kort, omröstningar, beslut och dokument.
+2. Sök eller välj en typ, och välj det du vill länka till: en omröstning, en tavla, ett dokument, en lista, ett möte, ett beslut, en kalenderhändelse eller en kanal.
+3. En kort kod läggs in i din text. När texten visas blir koden en länk med det aktuella namnet på det du länkar till.
+
+Du kan också kopiera adressen till en sida i Samling från webbläsaren och klistra in den i en text; den blir samma sorts länk.
+
+I mötesanteckningar och andra texter som du redigerar i ett textfält visas länkarna under fältet som [[link.in_text]], så att de kan öppnas därifrån.
+
+# Länkar och åtkomst
+- En länk visar namnet på det den pekar på bara för läsare som har åtkomst till det. Andra ser bara att det finns en länk till exempelvis en omröstning som de inte kan öppna.
+- En länk delar ingenting. För att någon ska kunna öppna det du länkar till delar du det med personen – se avsnittet Delning och åtkomst.`,
+
   'help.camera.title': 'Bilder och kameran',
   'help.camera.intro': 'Ta en bild där du står, eller låt Samling läsa av texten i en bild.',
   'help.camera.body': `# Ta en bild

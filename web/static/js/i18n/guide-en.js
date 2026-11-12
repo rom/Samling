@@ -471,6 +471,33 @@ Ask an administrator to delete your account. Your personal data and your private
 
 > Samling is installed and run by your own organisation. Ask your administrator if you want to know where the server is, or who is responsible for the personal data.`,
 
+  'help.mentions.title': 'Mentions and links',
+  'help.mentions.intro': 'Get someone\'s attention with @, and link to polls, boards and other things inside Samling.',
+  'help.mentions.body': `# Mention someone
+1. In a chat message or comment, type @ and start typing a name. Choose the person from the list, or type the username yourself – for example @robert.
+2. Send the message. The name is highlighted, and the person gets a notice.
+
+The person sees the notice as a number beside [[nav.mentions]] in the menu. [[nav.mentions]] lists the messages; select one to open the conversation. Opening the conversation marks its mentions as read, and [[mention.read_all]] clears them all.
+
+# Who is told
+- Only people who can read the conversation are told. If you mention someone in a channel they have no access to, or in a direct message they are not part of, nothing happens: they get no notice and learn nothing about the message.
+- A mention never gives anyone access.
+- If a person later loses access to the channel, or the message is deleted, the mention disappears from their list.
+- You are not told when you mention yourself.
+
+# Link to something in Samling
+1. Choose [[link.insert]] – the chain symbol above the message field in the chat, or under the text fields of meetings, calendar events, cards, polls, decisions and documents.
+2. Search or pick a kind, and select what you want to link to: a poll, a board, a document, a list, a meeting, a decision, a calendar event or a channel.
+3. A short code is placed in your text. When the text is shown, the code becomes a link with the current name of the thing.
+
+You can also copy the address of a page in Samling from the browser and paste it into a text; it becomes the same kind of link.
+
+In meeting notes and other texts that you edit in a text field, the links are shown under the field as [[link.in_text]], so that they can be opened from there.
+
+# Links and access
+- A link shows the name of the thing only to readers who have access to it. Others see only that there is a link to, for example, a poll that they cannot open.
+- A link does not share anything. To let someone open what you link to, share it with them – see the topic Sharing and access.`,
+
   'help.camera.title': 'Pictures and the camera',
   'help.camera.intro': 'Take a picture where you are, or let Samling read the text in a picture.',
   'help.camera.body': `# Take a picture

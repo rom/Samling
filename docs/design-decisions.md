@@ -269,3 +269,14 @@ text, and other clients can show the text as it is. Reactions come from a
 fixed set so that they cannot be used to inject arbitrary content, and
 comments are kept to one level to stay readable on a phone.
 
+## D26 — Mentions and links are text; access is decided when they are read
+
+A mention is the text `@username` and an internal link is the text
+`[[type:id]]`. Neither stores a name or a title, and neither grants
+anything. Who is notified is decided from the mentioned person's own access
+level when the message is written, and decided again whenever notifications
+are listed; link titles are resolved for each reader. The alternative —
+storing resolved names or titles in the message — would freeze information
+that the reader may not be allowed to see, and would go stale when things
+are renamed.
+

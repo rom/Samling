@@ -48,14 +48,15 @@ func cleanURL(s string) (string, error) {
 	return s, nil
 }
 
-func (a *App) events(ctx context.Context, u *User, from, to int64) ([]CalEvent, error) {
+// events lists the events the user can read in a period; with only set, just that event.
+func (a *App) events(ctx context.Context, u *User, from, to int64, only string) ([]CalEvent, error) {
 	vis, args := visible(u, "event", "e")
 	out := []CalEvent{}
 	// All-day events end at the start of their last day: add a day of slack.
 	err := a.DB.Each(ctx, `SELECT e.id, e.owner_id, e.title, e.description, e.location, e.url, e.starts_at, e.ends_at, e.all_day, e.meeting_id, e.uid, e.updated_at,
 		(SELECT COUNT(*) FROM acl a WHERE a.res_type='event' AND a.res_id=e.id)
-		FROM events e WHERE e.starts_at <= ? AND e.ends_at >= ? AND `+vis+` ORDER BY e.starts_at, e.id LIMIT 5000`,
-		append([]any{to, from - 86400}, args...), func(r *sql.Rows) error {
+		FROM events e WHERE e.starts_at <= ? AND e.ends_at >= ? AND (?='' OR e.id=?) AND `+vis+` ORDER BY e.starts_at, e.id LIMIT 5000`,
+		append([]any{to, from - 86400, only, only}, args...), func(r *sql.Rows) error {
 			var e CalEvent
 			var shares int
 			if err := r.Scan(&e.ID, &e.OwnerID, &e.Title, &e.Description, &e.Location, &e.URL, &e.StartsAt, &e.EndsAt, &e.AllDay, &e.MeetingID, &e.UID, &e.UpdatedAt, &shares); err != nil {
@@ -77,7 +78,7 @@ func window(c *Ctx) (from, to int64) {
 
 func (a *App) hCalendar(c *Ctx) error {
 	from, to := window(c)
-	out, err := a.events(c.ctx(), c.U, from, to)
+	out, err := a.events(c.ctx(), c.U, from, to, c.Query("event"))
 	if err != nil {
 		return err
 	}
@@ -136,7 +137,7 @@ func (a *App) hCreateEvent(c *Ctx) error {
 		return err
 	}
 	a.logAct(c, false, "event.created", "event", id, in.Title)
-	a.hub.publish(Event{"event", id})
+	a.hub.publish(Event{Type: "event", ID: id})
 	return c.JSON(map[string]string{"id": id})
 }
 
@@ -162,7 +163,7 @@ func (a *App) hUpdateEvent(c *Ctx) error {
 		return err
 	}
 	a.logAct(c, false, "event.updated", "event", id, in.Title)
-	a.hub.publish(Event{"event", id})
+	a.hub.publish(Event{Type: "event", ID: id})
 	return c.OK()
 }
 
@@ -248,7 +249,7 @@ func safeUID(uid, id string) string {
 
 func (a *App) hExportICS(c *Ctx) error {
 	from, to := window(c)
-	evs, err := a.events(c.ctx(), c.U, from, to)
+	evs, err := a.events(c.ctx(), c.U, from, to, "")
 	if err != nil {
 		return err
 	}

@@ -22,6 +22,23 @@ import (
 type Event struct {
 	Type string `json:"type"`
 	ID   string `json:"id"`
+	// to, when set, addresses the event to one person only.
+	to string
+}
+
+// publishTo sends an event to the open streams of one person.
+func (h *hub) publishTo(uid string, e Event) {
+	e.to = uid
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for s := range h.clients {
+		if s.uid == uid {
+			select {
+			case s.ch <- e:
+			default:
+			}
+		}
+	}
 }
 
 // Limits on open event streams. The per-user limit keeps one account from
@@ -168,7 +185,11 @@ func (a *App) hEvents(c *Ctx) error {
 			}
 			fmt.Fprint(c.W, ": ping\n\n")
 		case e := <-st.ch:
-			if lvl, err := a.level(c.ctx(), c.U, e.Type, e.ID); err != nil || lvl < LevelRead {
+			if e.to != "" {
+				if e.to != c.U.ID {
+					continue
+				}
+			} else if lvl, err := a.level(c.ctx(), c.U, e.Type, e.ID); err != nil || lvl < LevelRead {
 				continue
 			}
 			b, _ := json.Marshal(e)
@@ -262,7 +283,7 @@ func (a *App) hCreateChannel(c *Ctx) error {
 		return err
 	}
 	a.logAct(c, false, "channel.created", "channel", id, in.Name)
-	a.hub.publish(Event{"channel", id})
+	a.hub.publish(Event{Type: "channel", ID: id})
 	return c.JSON(map[string]string{"id": id})
 }
 
@@ -287,7 +308,7 @@ func (a *App) hUpdateChannel(c *Ctx) error {
 	if err := a.DB.Exec(c.ctx(), `UPDATE channels SET name=?, topic=?, updated_at=? WHERE id=?`, in.Name, clean(in.Topic, 300), a.unix(), id); err != nil {
 		return err
 	}
-	a.hub.publish(Event{"channel", id})
+	a.hub.publish(Event{Type: "channel", ID: id})
 	return c.OK()
 }
 
@@ -370,7 +391,7 @@ func (a *App) hOpenDM(c *Ctx) error {
 	if err != nil {
 		return err
 	}
-	a.hub.publish(Event{"channel", id})
+	a.hub.publish(Event{Type: "channel", ID: id})
 	return c.JSON(map[string]string{"id": id})
 }
 
@@ -551,7 +572,8 @@ func (a *App) hPostMessage(c *Ctx) error {
 		return err
 	}
 	a.logAct(c, false, "message.posted", "channel", id, "")
-	a.hub.publish(Event{"channel", id})
+	a.hub.publish(Event{Type: "channel", ID: id})
+	a.notifyMentions(c.ctx(), c.U, id, mid, in.Body)
 	return c.JSON(map[string]string{"id": mid})
 }
 
@@ -588,7 +610,8 @@ func (a *App) hEditMessage(c *Ctx) error {
 	if err := a.DB.Exec(c.ctx(), `UPDATE messages SET body=?, edited_at=? WHERE id=?`, in.Body, a.unix(), mid); err != nil {
 		return err
 	}
-	a.hub.publish(Event{"channel", ch})
+	a.notifyMentions(c.ctx(), c.U, ch, mid, in.Body) // people added by the edit
+	a.hub.publish(Event{Type: "channel", ID: ch})
 	return c.OK()
 }
 
@@ -608,6 +631,9 @@ func (a *App) hDeleteMessage(c *Ctx) error {
 		if err := tx.Exec(c.ctx(), `DELETE FROM reactions WHERE message_id=?`, mid); err != nil {
 			return err
 		}
+		if err := tx.Exec(c.ctx(), `DELETE FROM notifications WHERE message_id=?`, mid); err != nil {
+			return err
+		}
 		return tx.Exec(c.ctx(), `UPDATE messages SET body='', deleted_at=?, pinned_at=0 WHERE id=?`, a.unix(), mid)
 	})
 	if err != nil {
@@ -615,7 +641,7 @@ func (a *App) hDeleteMessage(c *Ctx) error {
 	}
 	a.gcFiles(c.ctx())
 	a.logAct(c, author != c.U.ID, "message.deleted", "channel", ch, "")
-	a.hub.publish(Event{"channel", ch})
+	a.hub.publish(Event{Type: "channel", ID: ch})
 	return c.OK()
 }
 
@@ -635,7 +661,7 @@ func (a *App) hPin(c *Ctx) error {
 	if err := a.DB.Exec(c.ctx(), `UPDATE messages SET pinned_at=?, pinned_by=? WHERE id=?`, at, by, mid); err != nil {
 		return err
 	}
-	a.hub.publish(Event{"channel", ch})
+	a.hub.publish(Event{Type: "channel", ID: ch})
 	return c.OK()
 }
 
@@ -643,6 +669,12 @@ func (a *App) hMarkRead(c *Ctx) error {
 	id := c.Param("id")
 	if err := a.need(c, "channel", id, LevelRead); err != nil {
 		return err
+	}
+	// Reading the conversation also takes care of the mentions in it.
+	if n, err := a.DB.ExecN(c.ctx(), `UPDATE notifications SET read_at=? WHERE user_id=? AND channel_id=? AND read_at=0`, a.unix(), c.U.ID, id); err != nil {
+		return err
+	} else if n > 0 {
+		a.hub.publishTo(c.U.ID, Event{Type: "mention", ID: id})
 	}
 	return firstErr(a.DB.Exec(c.ctx(), `INSERT INTO channel_reads (user_id,channel_id,last_read_at) VALUES (?,?,?)
 		ON CONFLICT (user_id,channel_id) DO UPDATE SET last_read_at=excluded.last_read_at`, c.U.ID, id, a.unix()), c.OK)

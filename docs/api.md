@@ -66,6 +66,9 @@ report the caller's level (1 read, 2 write, 3 manage).
 | POST | `/api/auth/logout` | signed in (limited) | Sign out, revoke the session |
 | GET | `/api/me` | signed in (limited) | Profile, roles, permissions, CSRF token, pending step, organisation name, limits |
 | PATCH | `/api/me` | signed in (limited) | Update display name, e-mail, phone, contact visibility, locale (`sv`/`en`), settings, `avatar` (`""`, `preset:1`–`preset:24`, or `file:<id>` of an own uploaded picture), `profile` (`address`, `interests`, `specialities`, `about`) and `profile_shared` (which of those fields other members may see) |
+| GET | `/api/notifications` | signed in | The caller's mentions: `unread` and the latest 50 `items` (`actor_id`, `channel_id`, `channel` name, `message_id`, `snippet`, `read`). Only mentions in conversations the caller can read at the time of the request |
+| POST | `/api/notifications/read` | signed in | Mark as read: `ids`, or all when empty |
+| POST | `/api/links` | signed in | Resolve internal links: `refs` (`type`: channel, document, list, poll, event, meeting, decision, board; `id`), at most 100. Returns `type`, `id`, `title` for those the caller can read; unreadable and missing ones are omitted alike |
 | GET | `/api/me/blocks` | signed in | Ids of the people whose direct messages the caller has blocked |
 | PUT / DELETE | `/api/me/blocks/{id}` | signed in | Block / stop blocking direct messages from a person |
 | POST | `/api/me/password` | signed in (limited) | Change password (`current`, `new`) |
@@ -129,7 +132,7 @@ report the caller's level (1 read, 2 write, 3 manage).
 | DELETE | `/api/channels/{id}` | level manage | Delete channel and messages |
 | POST | `/api/dm` | signed in | Open (or find) a direct conversation (`user_ids`) |
 | GET | `/api/channels/{id}/messages` | level read | Messages, oldest first (`?before=<id of the oldest message shown>`, `?limit=` ≤ 200) |
-| POST | `/api/channels/{id}/messages` | level write | Post (`body`, `file_ids`, optional `parent_id` to comment on a message in the same channel; comments are one level deep). `403 dm_blocked` in a direct conversation where a participant has blocked the caller. The body may contain the marks `**bold**`, `*italic*`, `__underline__`; they are stored as written |
+| POST | `/api/channels/{id}/messages` | level write | Post (`body`, `file_ids`, optional `parent_id` to comment on a message in the same channel; comments are one level deep). `403 dm_blocked` in a direct conversation where a participant has blocked the caller. The body may contain the marks `**bold**`, `*italic*`, `__underline__`, internal links `[[type:id]]` and mentions `@username`; all are stored as written. Mentioned people who can read the channel get a notification (once per message; an edit notifies people it adds) |
 | POST | `/api/messages/{id}/reactions` | level read | Toggle the caller's reaction (`emoji`, one of a fixed set). Messages are returned with `parent_id` and `reactions` (`emoji`, `count`, `mine`) |
 | GET | `/api/channels/{id}/pins` | level read | Pinned messages |
 | POST | `/api/channels/{id}/read` | level read | Mark as read |
@@ -254,6 +257,10 @@ whenever a resource the caller can read changes (types as in sharing). The
 event carries no content — fetch the resource to get the new state. A
 comment line (`: ping`) is sent every 25 seconds. Reconnect on disconnect.
 Native apps can use the same stream with the bearer header.
+
+Besides the resource events, a stream receives `{"type":"mention","id":"<channel id>"}` when its own account is mentioned or its mentions are marked as read. These are sent to that account's streams only.
+
+`GET /api/calendar?event=<id>` returns just that event (if readable), which is what a link to an event opens.
 
 ## Rate limits
 

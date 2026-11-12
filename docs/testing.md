@@ -81,6 +81,8 @@ exercised end to end. Nothing is mocked.
 | `TestListOwnersAndBoardColours` | Task owner on list items; colour marks on boards and cards, with validation |
 | `TestBlockingDirectMessages` | Blocking stops messages, reactions and new (also group) conversations; channels unaffected; unblocking |
 | `TestCommentsAndReactions` | Comments (one level, same channel, write access); reactions (fixed set, toggle, counts, read access is enough, removed with the message) |
+| `TestMentionsRespectAccess` | Mentions notify only people who can read the conversation (channels, direct messages), once per message, also via edits and comments; hidden again when access is withdrawn or the message is deleted; other people's notifications cannot be marked |
+| `TestInternalLinksResolveOnlyWhatTheReaderMaySee` | Link titles only for readable items; unreadable, missing and malformed references are omitted alike |
 | `TestAttachments` | Attachments on lists, cards, events, polls, decisions: access levels, own uploads only, file access follows the item, clean-up |
 
 ### Security regression tests (`internal/app/security_test.go`)
@@ -163,6 +165,10 @@ screen, persistence after reload), message formatting (and that markup in a
 message stays text), emoji, reactions, comments, a photo taken with a (fake)
 camera, text recognition of a picture into list rows, task owners, colour
 marks, attachments on a card, profile fields and picture, blocking,
+internal links (picker, pasted address, link without access, link from a
+meeting to a board), mentions (suggestions while typing, the Mentions page
+of the mentioned person, and no notice for a mention in somebody else's
+direct conversation),
 encrypted backup download, and that the
 member sees shared but not private content and no administration menu. It
 fails on any uncaught JavaScript error. It needs Node.js with the

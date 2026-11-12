@@ -1,6 +1,6 @@
 import { html, useState, useEffect, useRef, useStore, S, t, api, act, uploadFile, useLoad, useLive, go, can, userName, linkify, fmtAgo, setBlocked,
   Icon, Modal, Field, useForm, ShareEditor, ShareButton, Empty, Loading, confirmDelete, toast, errText } from '../lib.js';
-import { Avatar, rich, FormatBar, formatKey, EmojiButton, reactionEmojis, CameraButtons, FileView } from '../media.js';
+import { Avatar, rich, FormatBar, formatKey, EmojiButton, reactionEmojis, CameraButtons, FileView, LinkButton, insertAtCursor } from '../media.js';
 
 const dmName = (ch, me) => (ch.members || []).filter((id) => id !== me.id).map(userName).join(', ') || userName(me.id);
 const chName = (ch, me) => (ch.kind === 'dm' ? dmName(ch, me) : ch.name);
@@ -141,7 +141,30 @@ function Conversation({ ch, me, onChanged }) {
     if (await act(() => api('POST', `/channels/${ch.id}/messages`, { body: text, file_ids: files.map((f) => f.id) }))) { setText(''); setFiles([]); load(); }
     setBusy(false);
   };
-  const keydown = (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) send(e); else formatKey(e, setText); };
+  // Typing "@" and a few letters suggests people to mention.
+  const [sugg, setSugg] = useState(null);
+  const typed = (e) => {
+    setText(e.target.value);
+    const m = /(^|[^A-Za-z0-9._@/-])@([A-Za-z0-9._-]{0,31})$/.exec(e.target.value.slice(0, e.target.selectionStart));
+    setSugg(m ? { q: m[2].toLowerCase(), at: e.target.selectionStart - m[2].length - 1, i: 0 } : null);
+  };
+  const candidates = sugg ? S.users.filter((u) => u.id !== me.id && (ch.kind !== 'dm' || (ch.members || []).includes(u.id))
+    && (u.username.startsWith(sugg.q) || u.display_name.toLowerCase().split(/\s+/).some((w) => w.startsWith(sugg.q)))).slice(0, 6) : [];
+  const mention = (u) => {
+    const el = input.current, end = el.selectionStart;
+    setText(text.slice(0, sugg.at) + '@' + u.username + ' ' + text.slice(end));
+    setSugg(null);
+    const pos = sugg.at + u.username.length + 2;
+    requestAnimationFrame(() => { el.focus(); el.setSelectionRange(pos, pos); });
+  };
+  const keydown = (e) => {
+    if (sugg && candidates.length) {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); setSugg({ ...sugg, i: (sugg.i + (e.key === 'ArrowDown' ? 1 : candidates.length - 1)) % candidates.length }); return; }
+      if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); mention(candidates[Math.min(sugg.i, candidates.length - 1)]); return; }
+      if (e.key === 'Escape') { e.stopPropagation(); setSugg(null); return; }
+    }
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) send(e); else formatKey(e, setText);
+  };
   const comment = async (parent, body) => {
     const ok = await act(() => api('POST', `/channels/${ch.id}/messages`, { body, parent_id: parent }));
     if (ok) { setReplyTo(null); load(); }
@@ -193,11 +216,15 @@ function Conversation({ ch, me, onChanged }) {
         <input type="file" multiple hidden ref=${fileInput} onChange=${attach} />
         <button type="button" class="icon-btn" onClick=${() => fileInput.current.click()} aria-label=${t('chat.attach')} title=${t('chat.attach')} disabled=${busy}><${Icon} name="clip" /></button>
         <${CameraButtons} disabled=${busy} onPhoto=${addPhoto} onText=${(x) => setText((old) => (old ? old + '\n' + x : x))} />
+        <${LinkButton} onPick=${(x) => insertAtCursor(input.current, x + ' ', setText)} />
         <span class="sep"></span>
         <${FormatBar} target=${input} setValue=${setText} />
       </div>
+      ${sugg && candidates.length > 0 && html`<div class="mention-list" role="listbox" aria-label=${t('mention.suggest')}>
+        ${candidates.map((u, i) => html`<button type="button" role="option" key=${u.id} aria-selected=${i === Math.min(sugg.i, candidates.length - 1)}
+          onMouseDown=${(e) => { e.preventDefault(); mention(u); }}><${Avatar} user=${u} size="sm" /> ${u.display_name} <span class="muted small">@${u.username}</span></button>`)}</div>`}
       <div class="line">
-        <textarea rows="1" ref=${input} value=${text} onInput=${(e) => setText(e.target.value)} onKeyDown=${keydown} placeholder=${t('chat.placeholder')} aria-label=${t('chat.placeholder')} maxlength="10000"></textarea>
+        <textarea rows="1" ref=${input} value=${text} onInput=${typed} onKeyDown=${keydown} onBlur=${() => setSugg(null)} placeholder=${t('chat.placeholder')} aria-label=${t('chat.placeholder')} maxlength="10000"></textarea>
         <button class="primary" disabled=${busy} aria-label=${t('chat.send')}><${Icon} name="send" /></button>
       </div></form>` : html`<div class="composer muted"><${Icon} name="lock" /> ${t('chat.readonly')}</div>`}
   </div>`;

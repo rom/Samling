@@ -379,3 +379,33 @@ make run-dev DEV_PORT=8080
 ```
 
 The last command serves plain HTTP on `127.0.0.1:8080` with data in `./data`.
+
+## Making a release
+
+Releases are tagged from the default branch (`rom`) and built by GitHub
+Actions.
+
+```bash
+make tag VERSION=v1.2.3
+```
+
+```bash
+make publish VERSION=v1.2.3
+```
+
+* `make tag` creates the annotated tag `v1.2.3` on the current commit. It
+  refuses a dirty working tree, an existing tag, a version that is not of
+  the form `vX.Y.Z` (optionally `-rc.1` and the like), and a commit that is
+  not on `origin/rom`.
+* `make publish` pushes the tag. The workflow `.github/workflows/release.yml`
+  then checks that the tag is on the default branch, runs the tests, builds
+  the archives and publishes a GitHub release with generated notes. A
+  version with a suffix (`v1.2.3-rc.1`) is published as a pre-release.
+* `make release` builds the same archives locally into `dist/`
+  (`samling-<version>-linux-amd64.tar.gz`, `…-arm64.tar.gz` and
+  `SHA256SUMS`), without tagging or publishing anything. Each archive holds
+  the static binary — which reports the version with `samling version` —
+  the example configuration, `scripts/`, `deploy/` and the documentation.
+
+Verify a download with `sha256sum -c SHA256SUMS` before installing it.
+

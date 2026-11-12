@@ -158,7 +158,7 @@ func (a *App) hUpdateList(c *Ctx) error {
 	if err := a.DB.Exec(c.ctx(), `UPDATE lists SET title=?, kind=?, updated_at=? WHERE id=?`, in.Title, in.Kind, a.unix(), id); err != nil {
 		return err
 	}
-	a.hub.publish(Event{"list", id})
+	a.hub.publish(Event{Type: "list", ID: id})
 	return c.OK()
 }
 
@@ -246,7 +246,7 @@ func (a *App) hAddItem(c *Ctx) error {
 	if err != nil {
 		return err
 	}
-	a.hub.publish(Event{"list", id})
+	a.hub.publish(Event{Type: "list", ID: id})
 	return c.JSON(map[string]string{"id": iid})
 }
 
@@ -306,7 +306,7 @@ func (a *App) hUpdateItem(c *Ctx) error {
 	if err != nil {
 		return err
 	}
-	a.hub.publish(Event{"list", id})
+	a.hub.publish(Event{Type: "list", ID: id})
 	return c.OK()
 }
 
@@ -318,7 +318,7 @@ func (a *App) hDeleteItem(c *Ctx) error {
 	if err := a.DB.Exec(c.ctx(), `DELETE FROM list_items WHERE id=? AND list_id=?`, iid, id); err != nil {
 		return err
 	}
-	a.hub.publish(Event{"list", id})
+	a.hub.publish(Event{Type: "list", ID: id})
 	return c.OK()
 }
 
@@ -515,7 +515,7 @@ func (a *App) hUpdateBoard(c *Ctx) error {
 	if err := a.DB.Exec(c.ctx(), `UPDATE boards SET title=?, description=?, color=?, updated_at=? WHERE id=?`, in.Title, clean(in.Description, 1000), in.Color, a.unix(), id); err != nil {
 		return err
 	}
-	a.hub.publish(Event{"board", id})
+	a.hub.publish(Event{Type: "board", ID: id})
 	return c.OK()
 }
 
@@ -550,7 +550,7 @@ func (a *App) hAddColumn(c *Ctx) error {
 		cid, id, in.Title, id); err != nil {
 		return err
 	}
-	a.hub.publish(Event{"board", id})
+	a.hub.publish(Event{Type: "board", ID: id})
 	return c.JSON(map[string]string{"id": cid})
 }
 
@@ -584,7 +584,7 @@ func (a *App) hUpdateColumn(c *Ctx) error {
 	if err != nil {
 		return err
 	}
-	a.hub.publish(Event{"board", id})
+	a.hub.publish(Event{Type: "board", ID: id})
 	return c.OK()
 }
 
@@ -603,7 +603,7 @@ func (a *App) hDeleteColumn(c *Ctx) error {
 	if err := a.DB.Exec(c.ctx(), `DELETE FROM board_columns WHERE id=? AND board_id=?`, cid, id); err != nil {
 		return err
 	}
-	a.hub.publish(Event{"board", id})
+	a.hub.publish(Event{Type: "board", ID: id})
 	return c.OK()
 }
 
@@ -671,7 +671,7 @@ func (a *App) hAddCard(c *Ctx) error {
 		return err
 	}
 	a.logAct(c, false, "card.created", "board", id, *in.Title)
-	a.hub.publish(Event{"board", id})
+	a.hub.publish(Event{Type: "board", ID: id})
 	return c.JSON(map[string]string{"id": kid})
 }
 
@@ -749,7 +749,7 @@ func (a *App) hUpdateCard(c *Ctx) error {
 	if err != nil {
 		return err
 	}
-	a.hub.publish(Event{"board", id})
+	a.hub.publish(Event{Type: "board", ID: id})
 	return c.OK()
 }
 
@@ -762,6 +762,6 @@ func (a *App) hDeleteCard(c *Ctx) error {
 		return err
 	}
 	a.gcFiles(c.ctx()) // drops attachments of the card
-	a.hub.publish(Event{"board", id})
+	a.hub.publish(Event{Type: "board", ID: id})
 	return c.OK()
 }

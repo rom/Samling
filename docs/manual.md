@@ -30,6 +30,7 @@ changes.
 18. [On a phone](#18-on-a-phone)
 19. [For administrators](#19-for-administrators)
 20. [Pictures and the camera](#20-pictures-and-the-camera)
+21. [Mentions and links](#21-mentions-and-links)
 
 ---
 
@@ -115,6 +116,14 @@ conversations between the people in them.
 * **Take a picture** with the camera button; it is attached to your message
   and shown in the conversation. **Scan text with the camera** reads the text
   in a picture into the message box (see [Pictures and the camera](#20-pictures-and-the-camera)).
+* **Mention** someone by typing `@` and their username, for example
+  `@bertil`; a list of people appears as you type. The person gets a notice
+  under **Mentions** in the menu – but only if they can read the
+  conversation. Mentioning someone in a channel they have no access to, or
+  in a direct message they are not part of, tells them nothing.
+* **Link to something in Samling** – a poll, a board, a document, a meeting
+  and so on – with the chain button. The link shows the current name of the
+  thing and opens it. See [Mentions and links](#21-mentions-and-links).
 * **Block direct messages** from a person with the button at the top of the
   conversation with them. They can then neither write to you nor start a new
   conversation with you, and they are not told. Channels are not affected.
@@ -429,3 +438,31 @@ added to the description of a document, event, card, poll or decision.
 * Who can see an attached picture follows the sharing of the thing it is
   attached to.
 * The camera needs a secure (https) connection.
+
+## 21. Mentions and links
+
+**Mentions.** Write `@` followed by a username in a chat message or a
+comment. The person's name is highlighted, and they see a number beside
+**Mentions** in the menu. The Mentions page lists the messages; selecting
+one opens the conversation.
+
+![The Mentions page](manual/img/35-mentions.png)
+
+* Only people who can read the conversation are told. A mention never gives
+  anyone access, and never reveals a message to someone who cannot read it.
+* If the person later loses access to the channel, or the message is
+  deleted, the mention disappears from their list.
+
+**Links inside Samling.** The chain button (**Link to something in
+Samling**) is found above the message box in the chat and under the text
+fields of meetings (description, background and notes of each agenda item),
+calendar events, cards, polls, decisions and documents. Pick what to link
+to; a short code such as `[[poll:…]]` is put in the text and is shown as a
+link with the current name of the poll. Pasting the address of a page in
+Samling works the same way.
+
+* In fields that you edit as text, such as meeting notes, the links are
+  listed under the field as **Links in the text**.
+* A link shows the name only to readers who have access to the thing it
+  points to. Others see just that there is a link they cannot open.
+* A link does not share anything; share the item itself to let others in.

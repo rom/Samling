@@ -327,15 +327,85 @@ export function linkLabel(url) {
 // safeUrl guards every href built from user content.
 export const safeUrl = (u) => (/^(https?:\/\/|mailto:)/i.test(u || '') ? u : null);
 
-// linkify turns URLs and e-mail addresses in plain text into links. Text is
-// always rendered as text nodes (never as HTML).
+// ---------- internal links ----------
+
+// Things inside Samling that a text can link to: kind → [section, icon].
+// A link is written [[poll:<id>]]; the address of a page (…/#/polls/<id>)
+// pasted into a text works the same way.
+export const linkKinds = { channel: ['chat', 'chat'], document: ['documents', 'doc'], list: ['lists', 'list'], poll: ['polls', 'poll'],
+  event: ['calendar', 'calendar'], meeting: ['meetings', 'meeting'], decision: ['decisions', 'decision'], board: ['boards', 'board'] };
+const sectionKind = Object.fromEntries(Object.entries(linkKinds).map(([k, v]) => [v[0], k]));
+export const refToken = (type, id) => `[[${type}:${id}]]`;
+
+// Titles are asked for in one request per screenful and kept for a minute.
+// The server only names what this person may read.
+const refCache = new Map();
+let refQueue = [];
+function lookupRef(type, id) {
+  const key = type + ':' + id;
+  const hit = refCache.get(key);
+  if (hit && (hit.pending || Date.now() - hit.at < 60000)) return hit;
+  const entry = { pending: true, title: hit ? hit.title : '', ok: hit ? hit.ok : false };
+  refCache.set(key, entry);
+  if (refQueue.push({ type, id }) === 1) {
+    setTimeout(async () => {
+      const refs = refQueue.slice(0, 100);
+      refQueue = [];
+      let found = [];
+      try { found = await api('POST', '/links', { refs }); } catch { /* shown as unavailable */ }
+      refs.forEach((r) => refCache.set(r.type + ':' + r.id, { at: Date.now(), ok: false, title: '' }));
+      found.forEach((r) => refCache.set(r.type + ':' + r.id, { at: Date.now(), ok: true, title: r.title }));
+      notify();
+    }, 30);
+  }
+  return entry;
+}
+
+// RefLink shows a link to something in Samling by its current title. When
+// the reader has no access to it (or it is gone) the link says only that.
+export function RefLink({ type, id }) {
+  useStore();
+  const [section, icon] = linkKinds[type];
+  const r = lookupRef(type, id);
+  if (!r.ok) {
+    return r.pending ? html`<span class="ref"><${Icon} name=${icon} /> …</span>`
+      : html`<span class="ref none" title=${t('link.none_hint')}><${Icon} name="lock" /> ${t('link.none', { kind: t('link.kind_' + type) })}</span>`;
+  }
+  return html`<a class="ref" href=${'#/' + section + '/' + encodeURIComponent(id)}><${Icon} name=${icon} /> ${r.title || t('link.dm')}</a>`;
+}
+
+// internalRef recognises the address of a page of this Samling.
+function internalRef(url) {
+  try {
+    const u = new URL(url);
+    if (u.origin !== location.origin) return null;
+    const m = /^#\/([a-z]+)\/([A-Za-z0-9_-]{1,80})$/.exec(u.hash);
+    return m && sectionKind[m[1]] ? { type: sectionKind[m[1]], id: m[2] } : null;
+  } catch { return null; }
+}
+
+// refsIn lists the internal links in a text (for fields that are edited as
+// plain text, where the links are shown beside the field).
+export function refsIn(text) {
+  const out = [], seen = new Set();
+  for (const part of linkify(text || '')) {
+    if (part && part.type === RefLink && !seen.has(part.props.type + part.props.id)) { seen.add(part.props.type + part.props.id); out.push(part); }
+  }
+  return out;
+}
+
+// linkify turns URLs, e-mail addresses and internal links in plain text into
+// links. Text is always rendered as text nodes (never as HTML).
 export function linkify(text) {
   const out = [];
-  const re = /(https?:\/\/[^\s<>"']+[^\s<>"'.,;:!?)\]])|([\w.+-]+@[\w-]+(?:\.[\w-]+)+)/g;
+  const re = /(https?:\/\/[^\s<>"']+[^\s<>"'.,;:!?)\]])|([\w.+-]+@[\w-]+(?:\.[\w-]+)+)|\[\[(channel|document|list|poll|event|meeting|decision|board):([A-Za-z0-9_-]{1,80})\]\]/g;
   let last = 0, m;
   while ((m = re.exec(text))) {
     if (m.index > last) out.push(text.slice(last, m.index));
-    if (m[1]) {
+    const ref = m[3] ? { type: m[3], id: m[4] } : m[1] ? internalRef(m[1]) : null;
+    if (ref) {
+      out.push(html`<${RefLink} type=${ref.type} id=${ref.id} />`);
+    } else if (m[1]) {
       const label = linkLabel(m[1]);
       out.push(html`<a href=${m[1]} target="_blank" rel="noopener noreferrer" class=${label ? 'meetlink' : ''}>${label ? html`<${Icon} name="video" /> ${t('common.join', { name: label })}` : m[1]}</a>`);
     } else {
@@ -393,6 +463,8 @@ const paths = {
   reply: 'M9 7l-5 5 5 5M4 12h10a6 6 0 016 6v1',
   block: 'M12 21a9 9 0 100-18 9 9 0 000 18zM5.600 5.600l12.800 12.800',
   image: 'M4 5h16v14H4zM4 16l5-5 4 4 3-3 4 4M15 9.500h.01',
+  bell: 'M6 16V11a6 6 0 0112 0v5l1.500 2h-15zM10 20.500a2 2 0 004 0',
+  link: 'M10 14a4 4 0 005.700 0l3-3a4 4 0 00-5.700-5.700l-1 1M14 10a4 4 0 00-5.700 0l-3 3a4 4 0 005.700 5.700l1-1',
   key: 'M15 9a4 4 0 11-3.900 5H8v2H6v2H3v-3l6.100-6.100A4 4 0 0115 9zM16 8h.01',
 };
 export function Icon({ name, label }) {

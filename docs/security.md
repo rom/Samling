@@ -263,6 +263,19 @@ because the final chunk must carry the flag. Passphrase protected files
   another person. The server enforces it for new messages, reactions and new
   conversations (including group conversations); the blocked person is not
   told who blocked them beyond the refusal itself.
+* **Mentions**: `@username` in a message notifies the person only if their
+  own access level on the conversation is at least *read* when the message
+  is posted. Access is checked again every time the notifications are
+  listed, so a notification never outlives the right to read the message,
+  and it carries no text for a message that has been deleted. The live
+  event for a mention is delivered to the mentioned account's streams only.
+  A mention never grants access, and the author gets no feedback about
+  whether somebody was notified.
+* **Internal links**: `[[type:id]]` (or a pasted page address) is plain
+  text. Titles are resolved per reader through `POST /api/links`, which
+  answers for something unreadable exactly as for something that does not
+  exist. A link therefore discloses nothing its reader may not see, and
+  following it goes through the normal access checks.
 * **Request paths in the client**: ids taken from the address bar or from
   server data are only used in API paths made of plain segments; the client
   refuses anything else and ignores routes that are not plain segments. A

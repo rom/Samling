@@ -27,6 +27,7 @@ const topics = [
   { id: 'history', group: 'sections', icon: 'history', open: 'history', related: ['privacy', 'settings'] },
   { id: 'settings', group: 'sections', icon: 'settings', open: 'settings', related: ['accessibility', 'privacy'] },
   { id: 'privacy', group: 'more', icon: 'lock', open: 'settings', related: ['sharing', 'settings', 'history'] },
+  { id: 'mentions', group: 'sections', icon: 'bell', open: 'mentions', related: ['chat', 'sharing', 'meetings'] },
   { id: 'camera', group: 'more', icon: 'camera', related: ['chat', 'lists', 'privacy'] },
   { id: 'accessibility', group: 'more', icon: 'a11y', open: 'settings', related: ['keyboard', 'settings'] },
   { id: 'install', group: 'more', icon: 'phone', related: ['start', 'accessibility'] },

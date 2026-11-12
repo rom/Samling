@@ -370,3 +370,18 @@ progress { display: block; width: min(20rem, 100%); margin: .6rem auto 0; accent
   .items li { flex-wrap: wrap; }
   .items .text { flex-basis: 60%; }
 }
+
+/* ---- internal links and mentions ---- */
+.ref { display: inline-flex; align-items: center; gap: .25rem; padding: 0 .45rem; border-radius: 6px; background: var(--accent-soft); font-weight: 600; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; }
+.ref .icon { width: 16px; height: 16px; }
+.ref.none { background: var(--surface-2); color: var(--muted); font-weight: 400; }
+.refs { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; flex-basis: 100%; }
+.mention { background: var(--accent-soft); color: var(--accent); border-radius: 5px; padding: 0 .25rem; font-weight: 600; }
+.mention.me { background: var(--accent); color: var(--accent-text); }
+.mention-list { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); box-shadow: var(--shadow); margin-bottom: .3rem; overflow: hidden; max-width: 24rem; }
+.mention-list button { display: flex; align-items: center; gap: .5rem; border: none; border-radius: 0; background: none; text-align: left; padding: .35rem .6rem; min-height: 0; }
+.mention-list button[aria-selected="true"], .mention-list button:hover { background: var(--accent-soft); }
+.link-list { max-height: 22rem; overflow-y: auto; margin-top: .6rem; }
+.link-list > button { border: none; border-top: 1px solid var(--border); border-radius: 0; background: none; text-align: left; width: 100%; font: inherit; cursor: pointer; }
+.link-list > button:hover, .link-list > button:focus-visible { background: var(--surface-2); }
+.rows > a.unread { background: var(--accent-soft); }

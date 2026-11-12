@@ -1,6 +1,6 @@
 // Application shell: sign-in, navigation and routing to the views.
 import { html, render, useState, useEffect, useStore, S, setState, t, api, act, errText, ApiError, loadSession, loadDirectory, startLive, stopLive,
-  useRoute, useLive, Icon, Toasts, ErrorBoundary, Field, useForm, can, locales, getLocale, setLocale } from './lib.js';
+  useRoute, useLive, userName, toast, Icon, Toasts, ErrorBoundary, Field, useForm, can, locales, getLocale, setLocale } from './lib.js';
 import { Avatar } from './media.js';
 import { Home } from './views/home.js';
 import { Chat } from './views/chat.js';
@@ -14,6 +14,7 @@ import { Boards } from './views/boards.js';
 import { Search } from './views/search.js';
 import { People } from './views/people.js';
 import { History } from './views/history.js';
+import { Mentions } from './views/mentions.js';
 import { Settings, PasswordForm, MfaSetup, Passkeys } from './views/settings.js';
 import { passkeysSupported, signInWithPasskey } from './passkey.js';
 import { Admin } from './views/admin.js';
@@ -21,10 +22,10 @@ import { Help } from './views/help.js';
 import { Tour } from './views/tour.js';
 
 const views = { home: Home, chat: Chat, documents: Documents, lists: Lists, polls: Polls, calendar: Calendar, meetings: Meetings,
-  decisions: Decisions, boards: Boards, search: Search, people: People, history: History, settings: Settings, admin: Admin, help: Help };
+  decisions: Decisions, boards: Boards, search: Search, people: People, history: History, mentions: Mentions, settings: Settings, admin: Admin, help: Help };
 
 const navItems = [
-  ['home', 'home'], ['chat', 'chat'], ['documents', 'doc'], ['lists', 'list'], ['polls', 'poll'], ['calendar', 'calendar'],
+  ['home', 'home'], ['chat', 'chat'], ['mentions', 'bell'], ['documents', 'doc'], ['lists', 'list'], ['polls', 'poll'], ['calendar', 'calendar'],
   ['meetings', 'meeting'], ['decisions', 'decision'], ['boards', 'board'], ['search', 'search'], ['people', 'people'], ['history', 'history'],
 ];
 
@@ -103,13 +104,24 @@ function Shell() {
   const refreshUnread = () => api('GET', '/channels').then((cs) => setUnread(cs.reduce((n, c) => n + c.unread, 0))).catch(() => {});
   useEffect(() => { startLive(); refreshUnread(); return stopLive; }, []);
   useLive(['channel'], refreshUnread);
+  // Mentions: the number in the menu, and a short notice when a new one arrives.
+  const [mentions, setMentions] = useState(0);
+  const refreshMentions = (announce) => api('GET', '/notifications').then((r) => {
+    setMentions((old) => {
+      if (announce && r.unread > old && r.items[0] && !r.items[0].read) toast(t('mention.toast', { name: userName(r.items[0].actor_id) }));
+      return r.unread;
+    });
+  }).catch(() => {});
+  useEffect(() => { refreshMentions(false); }, []);
+  useLive(['mention'], () => refreshMentions(true));
   useEffect(() => { setOpen(false); if (route[0] !== 'chat') refreshUnread(); }, [route.join('/')]);
   useEffect(() => { document.title = (hasNav(route[0]) ? t('nav.' + route[0]) + ' – ' : '') + s.org; });
   const View = views[route[0]] || Home;
   const admin = can('users.manage') || can('roles.manage') || can('logs.view') || can('backup.manage');
   const logout = async () => { await act(() => api('POST', '/auth/logout')); stopLive(); setState({ me: null, csrf: '' }); };
   const link = (key, icon) => html`<a href=${'#/' + key} aria-current=${route[0] === key ? 'page' : null}>
-    <${Icon} name=${icon} /> ${t('nav.' + key)}${key === 'chat' && unread > 0 && html`<span class="count" aria-label=${t('chat.unread', { n: unread })}>${unread}</span>`}</a>`;
+    <${Icon} name=${icon} /> ${t('nav.' + key)}${key === 'chat' && unread > 0 && html`<span class="count" aria-label=${t('chat.unread', { n: unread })}>${unread}</span>`}
+    ${key === 'mentions' && mentions > 0 && html`<span class="count" aria-label=${t('mention.unread', { n: mentions })}>${mentions}</span>`}</a>`;
   return html`<div class="shell">
     <a class="skip" href="#main">${t('nav.skip')}</a>
     <div class="topbar">

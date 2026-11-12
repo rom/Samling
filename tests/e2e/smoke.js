@@ -405,6 +405,72 @@ const step = async (name, fn) => { try { await fn(); console.log('ok   ' + name)
     await page.getByText('Du har inte blockerat någon.').waitFor();
   });
 
+  await step('internal links: from a chat message to a poll, and from meeting notes to a board', async () => {
+    await page.goto(BASE + '/#/chat');
+    await page.getByRole('link', { name: /general/ }).click();
+    await page.getByRole('toolbar').getByRole('button', { name: 'Länka till något i Samling' }).click();
+    let dlg = page.getByRole('dialog', { name: 'Länka till något i Samling' });
+    await dlg.getByLabel('Typ').selectOption('poll');
+    await dlg.locator('.link-list button').first().click();
+    const box = page.getByLabel('Skriv ett meddelande');
+    if (!/^\[\[poll:[0-9a-f]+\]\] $/.test(await box.inputValue())) throw new Error('inserted ' + (await box.inputValue()));
+    await box.press('Enter');
+    const link = page.locator('.msg a.ref').last();
+    await link.waitFor();
+    const title = (await link.textContent()).trim();
+    if (!title || title.includes('[[')) throw new Error('link title: ' + title);
+    await link.click();
+    await page.waitForFunction(() => location.hash.startsWith('#/polls/'));
+    await page.getByRole('heading', { level: 1, name: title }).waitFor();
+    // A pasted address of a page works as well; a link to nothing says only that.
+    await page.goto(BASE + '/#/boards');
+    await page.getByRole('link', { name: /Styrelsearbete/ }).click();
+    await page.getByRole('heading', { level: 1, name: 'Styrelsearbete' }).waitFor();
+    const boardUrl = page.url();
+    await page.goto(BASE + '/#/chat');
+    await page.getByRole('link', { name: /general/ }).click();
+    await box.fill('Se ' + boardUrl + ' och [[board:finnsinte]]');
+    await box.press('Enter');
+    await page.locator('.msg a.ref', { hasText: 'Styrelsearbete' }).waitFor();
+    await page.locator('.msg .ref.none', { hasText: 'ingen åtkomst' }).waitFor();
+    await shot('57-links');
+    // Meeting: link to the board from the description of the meeting.
+    await page.goto(BASE + '/#/meetings');
+    await page.getByRole('button', { name: /Planera möte|Nytt möte/ }).first().click();
+    await page.getByRole('dialog').getByLabel('Rubrik').fill('Planeringsmöte');
+    await page.getByRole('dialog').getByRole('button', { name: /Skapa|Spara/ }).click();
+    await page.getByRole('heading', { level: 1, name: 'Planeringsmöte' }).waitFor();
+    await page.locator('.field-tools').first().getByRole('button', { name: 'Länka till något i Samling' }).click();
+    dlg = page.getByRole('dialog', { name: 'Länka till något i Samling' });
+    await dlg.getByRole('searchbox').fill('Styrelsearbete');
+    await dlg.locator('.link-list button').first().click();
+    await page.locator('.refs a.ref', { hasText: 'Styrelsearbete' }).waitFor();
+    await page.getByRole('button', { name: 'Spara', exact: true }).first().click();
+    await page.locator('.refs a.ref', { hasText: 'Styrelsearbete' }).click();
+    await page.getByRole('heading', { level: 1, name: 'Styrelsearbete' }).waitFor();
+  });
+
+  await step('mentions: suggestion list while typing', async () => {
+    await page.goto(BASE + '/#/chat');
+    await page.getByRole('link', { name: /general/ }).click();
+    const box = page.getByLabel('Skriv ett meddelande');
+    await box.pressSequentially('Kan du ta nycklarna, @ber');
+    await page.getByRole('listbox', { name: 'Personer att nämna' }).getByRole('option', { name: /Bertil Berg/ }).waitFor();
+    await box.press('Enter');
+    if (!(await box.inputValue()).endsWith('@bertil ')) throw new Error('mention inserted as ' + (await box.inputValue()));
+    await box.press('Enter');
+    await page.locator('.msg .mention', { hasText: '@Bertil Berg' }).waitFor();
+    // Mentioned in a direct conversation Bertil is not part of: he must not hear of it (checked as Bertil below).
+    await page.getByRole('button', { name: 'Nytt direktmeddelande' }).click();
+    await page.getByRole('dialog').getByText('Cecilia Ceder').click();
+    await page.getByRole('button', { name: 'Starta konversation' }).click();
+    await page.getByRole('heading', { name: 'Cecilia Ceder' }).waitFor();
+    await box.fill('@bertil ska inte få veta detta');
+    await box.press('Enter');
+    await page.locator('.msg', { hasText: 'ska inte få veta' }).waitFor();
+    await shot('58-mention');
+  });
+
   await step('search', async () => {
     await page.goto(BASE + '/#/search');
     await page.getByLabel(/Sök meddelanden/).fill('budget*');
@@ -513,6 +579,13 @@ const step = async (name, fn) => { try { await fn(); console.log('ok   ' + name)
     await p2.getByRole('link', { name: /Styrelsemöte/ }).click();
     await p2.getByText(/Justerat av Anna Admin/).waitFor();
     await p2.screenshot({ path: OUT + '/shot-35-mobile-meeting.png' });
+    // Mentions: Bertil hears of the one in the channel he can read, not of the one in somebody else's direct conversation.
+    await p2.goto(BASE + '/#/mentions');
+    await p2.getByText('Kan du ta nycklarna').waitFor();
+    if ((await p2.locator('.rows > a').count()) !== 1 || await p2.getByText('ska inte få veta').count()) throw new Error('mention from a channel without access was shown');
+    await p2.screenshot({ path: OUT + '/shot-36-mobile-mentions.png' });
+    await p2.locator('.rows > a').click();
+    await p2.locator('.msg .mention.me').first().waitFor();
     await ctx2.close();
   });
 

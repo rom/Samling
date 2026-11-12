@@ -117,6 +117,7 @@ const everyone = (level = 1) => [{ type: 'all', id: '', level }];
     if (text === 'Check the tents') await admin('PATCH', `/lists/${list}/items/${item.id}`, { done: true });
   }
   await admin('POST', '/lists', { title: 'My shopping list', kind: 'todo' });
+  await as.elsa('POST', `/channels/${general}/messages`, { body: `@admin could you check that nothing is missing in [[list:${list}]] before Friday?` });
 
   // Polls
   const poll = (await as.elsa('POST', '/polls', { title: 'Which day suits best for the autumn party?', description: 'We need to book the hall this week.', kind: 'single',
@@ -249,6 +250,7 @@ const everyone = (level = 1) => [{ type: 'all', id: '', level }];
   await page.getByLabel('Text from the picture').waitFor({ timeout: 120000 });
   await shot('34-scan-text');
   await page.keyboard.press('Escape');
+  await open('mentions'); await shot('35-mentions');
   await open('settings'); await shot('20-settings-appearance');
   await page.getByText('Profile picture', { exact: true }).scrollIntoViewIfNeeded(); await shot('33-profile');
   await page.getByRole('heading', { name: 'Security' }).scrollIntoViewIfNeeded(); await shot('21-settings-security');

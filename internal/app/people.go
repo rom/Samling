@@ -698,6 +698,8 @@ func (a *App) hAdminDeleteUser(c *Ctx) error {
 			`DELETE FROM channel_reads WHERE user_id=?`,
 			`DELETE FROM passkeys WHERE user_id=?`,
 			`DELETE FROM recovery_codes WHERE user_id=?`,
+			`DELETE FROM notifications WHERE user_id=?`,
+			`DELETE FROM notifications WHERE actor_id=?`,
 			`DELETE FROM dm_blocks WHERE user_id=?`,
 			`DELETE FROM dm_blocks WHERE blocked_id=?`,
 			`DELETE FROM reactions WHERE user_id=?`,

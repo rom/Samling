@@ -1,0 +1,52 @@
+name: Release
+
+# Pushing a version tag (make publish VERSION=v1.2.3) tests the tagged
+# commit, builds the release archives and publishes a GitHub release.
+on:
+  push:
+    tags: ['v[0-9]+.[0-9]+.[0-9]+*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Test, build and publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write # create the release and upload its files
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: The tag is on the default branch
+        run: git merge-base --is-ancestor "$GITHUB_SHA" "origin/${{ github.event.repository.default_branch }}"
+      - name: Vet and formatting
+        run: make vet
+      - name: Tests and translation check
+        run: make test
+      - name: Build the release archives
+        run: scripts/release.sh build "$GITHUB_REF_NAME"
+      - name: The binary reports the released version
+        run: |
+          tar -xzf "dist/samling-$GITHUB_REF_NAME-linux-amd64.tar.gz" -C "$RUNNER_TEMP"
+          test "$("$RUNNER_TEMP/samling-$GITHUB_REF_NAME-linux-amd64/samling" version)" = "samling ${GITHUB_REF_NAME#v}"
+      - name: Publish the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          prerelease=()
+          case "$GITHUB_REF_NAME" in *-*) prerelease=(--prerelease) ;; esac
+          gh release create "$GITHUB_REF_NAME" dist/*.tar.gz dist/SHA256SUMS \
+            --title "Samling $GITHUB_REF_NAME" --generate-notes --verify-tag "${prerelease[@]}"

@@ -243,7 +243,7 @@ func (a *App) hCreatePoll(c *Ctx) error {
 		return err
 	}
 	a.logAct(c, false, "poll.created", "poll", id, in.Title)
-	a.hub.publish(Event{"poll", id})
+	a.hub.publish(Event{Type: "poll", ID: id})
 	return c.JSON(map[string]string{"id": id})
 }
 
@@ -386,7 +386,7 @@ func (a *App) hVote(c *Ctx) error {
 		// per person would allow votes to be matched to people.
 		a.logAct(c, false, "poll.voted", "poll", id, p.Title)
 	}
-	a.hub.publish(Event{"poll", id})
+	a.hub.publish(Event{Type: "poll", ID: id})
 	return c.OK()
 }
 
@@ -399,7 +399,7 @@ func (a *App) hClosePoll(c *Ctx) error {
 		return err
 	}
 	a.logAct(c, false, "poll.closed", "poll", id, "")
-	a.hub.publish(Event{"poll", id})
+	a.hub.publish(Event{Type: "poll", ID: id})
 	return c.OK()
 }
 

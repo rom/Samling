@@ -5,7 +5,7 @@ DEV_PORT ?= 8080
 DEV_DATA ?= ./data
 GOFLAGS_BUILD = -trimpath -ldflags "-s -w"
 
-.PHONY: help build test test-postgres check-i18n shellcheck e2e manual-screenshots vet fmt run-dev clean
+.PHONY: help build test test-postgres check-i18n shellcheck e2e manual-screenshots vet fmt run-dev clean tag release publish
 
 help: ## show this help
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-14s %s\n", $$1, $$2}'
@@ -43,5 +43,14 @@ fmt: ## format the Go sources
 run-dev: build ## run locally over plain HTTP on DEV_PORT (default 8080), data in ./data
 	SAMLING_INSECURE_HTTP=1 $(BIN) serve --host 127.0.0.1 --port $(DEV_PORT) --data-dir $(DEV_DATA)
 
+tag: ## create the release tag VERSION=vX.Y.Z on the current commit (must be on the release branch)
+	scripts/release.sh tag "$(VERSION)"
+
+release: ## build the release archives and checksums into dist/ (VERSION optional)
+	scripts/release.sh build "$(VERSION)"
+
+publish: ## push the tag VERSION=vX.Y.Z; GitHub Actions then tests, builds and publishes the release
+	scripts/release.sh publish "$(VERSION)"
+
 clean: ## remove build output
-	rm -rf bin
+	rm -rf bin dist

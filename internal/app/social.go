@@ -207,7 +207,7 @@ func (a *App) hReact(c *Ctx) error {
 			return err
 		}
 	}
-	a.hub.publish(Event{"channel", ch})
+	a.hub.publish(Event{Type: "channel", ID: ch})
 	return c.OK()
 }
 
@@ -297,7 +297,7 @@ func (a *App) hAttach(c *Ctx) error {
 	if err != nil {
 		return err
 	}
-	a.hub.publish(Event{rt, rid})
+	a.hub.publish(Event{Type: rt, ID: rid})
 	return c.OK()
 }
 
@@ -314,7 +314,7 @@ func (a *App) hDetach(c *Ctx) error {
 		return err
 	}
 	a.gcFiles(c.ctx())
-	a.hub.publish(Event{rt, rid})
+	a.hub.publish(Event{Type: rt, ID: rid})
 	return c.OK()
 }
 

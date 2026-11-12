@@ -13,7 +13,7 @@ var Tables = []string{
 	"polls", "poll_options", "ballots", "ballot_choices", "poll_voters",
 	"events", "meetings", "agenda_items", "decisions", "decision_revisions",
 	"boards", "board_columns", "cards", "activity", "settings",
-	"recovery_codes", "passkeys", "reactions", "dm_blocks", "attachments",
+	"recovery_codes", "passkeys", "reactions", "dm_blocks", "attachments", "notifications",
 }
 
 // migrations are applied in order; never edit an entry that has been
@@ -382,4 +382,17 @@ CREATE TABLE attachments (
   PRIMARY KEY (res_type, res_id, file_id)
 );
 CREATE INDEX attachments_file ON attachments(file_id)`,
+	// 4: notifications (mentions)
+	`CREATE TABLE notifications (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  actor_id TEXT NOT NULL,
+  channel_id TEXT NOT NULL,
+  message_id TEXT NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+  created_at BIGINT NOT NULL,
+  read_at BIGINT NOT NULL DEFAULT 0,
+  UNIQUE (user_id, message_id)
+);
+CREATE INDEX notifications_user ON notifications(user_id, read_at)`,
 }

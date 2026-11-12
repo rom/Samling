@@ -1,4 +1,4 @@
-import { html, useState, useEffect, t, api, act, useLoad, useLive, go, can, userName, fmtDateTime, toInput, fromInput, Icon, Modal, Field, useForm,
+import { html, useState, useEffect, t, api, act, useLoad, useLive, go, can, userName, linkify, fmtDateTime, toInput, fromInput, Icon, Modal, Field, useForm,
   ShareEditor, ShareButton, SharedBadge, Badge, Page, Empty, Loading, confirmDelete } from '../lib.js';
 import { Attachments, ScanInto } from '../media.js';
 
@@ -96,7 +96,7 @@ function Detail({ id }) {
     <div class="row">${status(p)}<${Badge}>${t('polls.kind_' + p.kind)}<//>${p.anonymous && html`<${Badge} kind="info"><${Icon} name="lock" /> ${t('polls.anonymous_badge')}<//>`}
       <span class="muted small">${t('polls.by', { name: userName(p.owner_id) })} · ${t('polls.voters', { n: p.voters })}
         ${p.closes_at > 0 && !p.closed ? ' · ' + t('polls.closes_at', { when: fmtDateTime(p.closes_at) }) : ''}${p.closed ? ' · ' + t('polls.closed_at', { when: fmtDateTime(p.closed_at) }) : ''}</span></div>
-    ${p.description && html`<p class="pre">${p.description}</p>`}
+    ${p.description && html`<p class="pre">${linkify(p.description)}</p>`}
     <${Attachments} type="poll" id=${id} canEdit=${p.level >= 3} />
     <div class="stack">
       ${canVote && html`<div class="card"><h2>${t('polls.your_vote')}</h2>

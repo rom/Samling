@@ -23,6 +23,8 @@ const step = async (name, fn) => { try { await fn(); console.log('ok   ' + name)
 (async () => {
   const browser = await chromium.launch();
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, locale: 'sv-SE', timezoneId: 'Europe/Stockholm', acceptDownloads: true });
+  // The welcome tour is exercised with the second user; elsewhere it is switched off.
+  await ctx.addInitScript(() => localStorage.setItem('samling.tour', 'off'));
   const page = await ctx.newPage();
   page.on('console', (m) => { if (m.type() === 'error' && !m.text().includes('401')) { console.log('  console.error:', m.text().slice(0, 300)); errors.push('console'); } });
   page.on('pageerror', (e) => { console.log('  pageerror:', e.message.slice(0, 300)); errors.push('pageerror'); });
@@ -343,6 +345,18 @@ const step = async (name, fn) => { try { await fn(); console.log('ok   ' + name)
     await p2.getByLabel('Upprepa nytt lösenord').fill(PW);
     await p2.getByRole('button', { name: 'Byt lösenord' }).click();
     await p2.getByRole('button', { name: 'Meny' }).waitFor();
+    // First sign-in: the welcome tour opens. Step through it, then check it stays away.
+    const tour = p2.getByRole('dialog');
+    await tour.waitFor();
+    await p2.screenshot({ path: OUT + '/shot-29-mobile-tour.png' });
+    await tour.getByRole('button', { name: 'Nästa' }).click();
+    await tour.getByRole('button', { name: 'Nästa' }).click();
+    await tour.getByRole('button', { name: 'Hoppa över' }).click();
+    await tour.waitFor({ state: 'detached' });
+    await p2.reload();
+    await p2.getByRole('button', { name: 'Meny' }).waitFor();
+    await p2.waitForTimeout(1200);
+    if (await p2.getByRole('dialog').count()) throw new Error('the tour came back after being skipped');
     await p2.screenshot({ path: OUT + '/shot-30-mobile-home.png' });
     await p2.getByRole('button', { name: 'Meny' }).click();
     await p2.screenshot({ path: OUT + '/shot-31-mobile-menu.png' });
@@ -410,6 +424,7 @@ const step = async (name, fn) => { try { await fn(); console.log('ok   ' + name)
       return String((h.readUInt32BE(o) & 0x7fffffff) % 1000000).padStart(6, '0');
     };
     const ctx3 = await browser.newContext({ viewport: { width: 1280, height: 800 }, locale: 'en-GB' });
+    await ctx3.addInitScript(() => localStorage.setItem('samling.tour', 'off'));
     const p3 = await ctx3.newPage();
     p3.on('pageerror', (e) => { console.log('  pageerror(p3):', e.message.slice(0, 300)); errors.push('pageerror'); });
     p3.on('dialog', (d) => d.accept(PW));
@@ -431,12 +446,12 @@ const step = async (name, fn) => { try { await fn(); console.log('ok   ' + name)
     await p3.goto(BASE);
     await p3.getByRole('combobox').selectOption('en');
     await signIn();
-    await p3.getByLabel('Current password').fill('temporary-password-1');
-    await p3.getByLabel('New password', { exact: true }).fill(PW);
-    await p3.getByLabel('Repeat new password').fill(PW);
-    await p3.getByRole('button', { name: 'Change password' }).click();
+    // The account's language is Swedish until it is changed in the settings.
+    await p3.getByLabel('Nuvarande lösenord').fill('temporary-password-1');
+    await p3.getByLabel('Nytt lösenord', { exact: true }).fill(PW);
+    await p3.getByLabel('Upprepa nytt lösenord').fill(PW);
+    await p3.getByRole('button', { name: 'Byt lösenord' }).click();
     await p3.locator('nav.nav').waitFor();
-    await dismissTour(p3);
     await p3.goto(BASE + '/#/settings');
     await p3.getByLabel('English').check();
     // Authenticator app + recovery codes
@@ -459,10 +474,10 @@ const step = async (name, fn) => { try { await fn(); console.log('ok   ' + name)
     await p3.getByText('Test key').waitFor();
     await p3.screenshot({ path: OUT + '/shot-51-passkey.png' });
     // Sign in again with password + a recovery code (single use)
-    await p3.getByRole('button', { name: 'Sign out' }).click();
+    await p3.getByRole('button', { name: 'Sign out', exact: true }).click();
     await signIn(codes[0]);
     await p3.locator('nav.nav').waitFor();
-    await p3.getByRole('button', { name: 'Sign out' }).click();
+    await p3.getByRole('button', { name: 'Sign out', exact: true }).click();
     await signIn(codes[0]);
     await p3.getByText('Wrong username, password or code.').waitFor();
     // Sign in with the passkey: no user name, no password
@@ -483,8 +498,27 @@ const step = async (name, fn) => { try { await fn(); console.log('ok   ' + name)
     errors.splice(0, errors.length, ...errors.filter((x) => x !== 'console')); // expected 401s above
   });
 
+  await step('online help in both languages; tour can be restarted', async () => {
+    await page.goto(BASE + '/#/meetings');
+    await page.locator('.page-head').getByRole('link', { name: 'Help' }).click();
+    await page.waitForFunction(() => location.hash === '#/help/meetings');
+    await page.getByRole('heading', { level: 1 }).waitFor();
+    await shot('60-help-topic');
+    await page.goto(BASE + '/#/help');
+    await page.getByRole('searchbox').fill('passkey');
+    await page.getByRole('link', { name: /Settings/ }).first().waitFor();
+    await page.getByRole('searchbox').fill('');
+    await shot('61-help');
+    await page.getByRole('button', { name: /welcome tour/i }).click();
+    const tour = page.getByRole('dialog');
+    await tour.waitFor();
+    await shot('62-tour');
+    await page.keyboard.press('Escape');
+    await tour.waitFor({ state: 'detached' });
+  });
+
   await step('logout', async () => {
-    await page.getByRole('button', { name: 'Sign out' }).click();
+    await page.getByRole('button', { name: 'Sign out', exact: true }).click();
     await page.getByRole('button', { name: 'Sign in', exact: true }).waitFor();
     await shot('40-login');
   });

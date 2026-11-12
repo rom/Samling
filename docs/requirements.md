@@ -45,7 +45,7 @@ Status values: **Implemented**, **Partial** (works, with the stated gap),
 | S4 | Possible to encrypt databases, backups, exports | Partial | Backups are always encrypted. The members export can be encrypted. Uploaded files are always encrypted. In the database, PII fields and secrets are encrypted, but **the database as a whole is not encrypted by Samling**: use disk/volume encryption (LUKS, fscrypt) or the PostgreSQL platform's encryption. See [security.md](security.md#encryption-at-rest). |
 | S5 | Hardened with SELinux, seccomp, Landlock, systemd and other Linux features | Partial | systemd sandboxing and seccomp filter: `deploy/systemd/samling.service` (verified with `systemd-analyze`, exposure score 1.2). Landlock: built into the server (verified). SELinux: module provided in `deploy/selinux/` but **not compiled or tested**. No capabilities are required (one for ports below 1024). |
 | S6 | TLS 1.3 | Implemented | TLS 1.3 is the minimum and only version; verified. Certificates are reloaded without restart. |
-| S7 | Other good security practices | Implemented | Argon2id, TOTP MFA, lockout and rate limiting, CSRF protection, strict CSP and security headers, hashed session tokens, audit log, forced password change, safe file handling. Known gaps: no MFA recovery codes (an administrator or the CLI resets MFA), no automated master key rotation. |
+| S7 | Other good security practices | Implemented | Argon2id, TOTP MFA, lockout and rate limiting, CSRF protection, strict CSP and security headers, hashed session tokens, audit log, forced password change, safe file handling. Also: MFA recovery codes, passkeys (WebAuthn), optional idle timeout, sign out everywhere, storage quota. A security audit was carried out and its findings fixed (see [security.md](security.md) and `internal/app/security_test.go`). Known gap: no automated master key rotation. |
 
 ## Technical requirements
 
@@ -58,6 +58,9 @@ Status values: **Implemented**, **Partial** (works, with the stated gap),
 | T5 | Possible to have native iPhone and Android apps | Partial | The REST API, bearer token login and an installable web app (PWA) are in place. Native wrapper projects are **not included**; see [mobile.md](mobile.md). |
 | T6 | Documentation of design decisions, requirements, architecture, tests, security, usage in `docs/` | Implemented | This directory. |
 | T7 | The port the server runs on is configurable | Implemented | `server.port`, `SAMLING_PORT`, `--port`. |
+| U1 | Welcome walkthrough at first use | Implemented | Ten-step tour that points at each part; restartable from Help. |
+| U2 | Online help in all languages | Implemented | Help section with about twenty topics in Swedish and English, searchable, linked from every page. |
+| U3 | User manual with screenshots | Implemented | [manual.md](manual.md); screenshots regenerated with `make manual-screenshots`. |
 | T8 | YAML configuration file | Implemented | `samling.yaml`, see [`samling.example.yaml`](../samling.example.yaml). Environment variables and flags override it. |
 
 ## Known limitations of the MVP (summary)
@@ -69,7 +72,7 @@ Status values: **Implemented**, **Partial** (works, with the stated gap),
 * No outgoing e-mail, push notifications or webhooks (F16).
 * No native app projects (T5).
 * S3 storage and the SELinux module are untested (T4, S5).
-* No MFA recovery codes; no automated key rotation (S7).
+* No automated key rotation (S7).
 * Restore is a CLI operation (S2).
 * Threads/replies, reactions and message search highlighting are not part of
   the chat.

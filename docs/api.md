@@ -67,9 +67,17 @@ report the caller's level (1 read, 2 write, 3 manage).
 | GET | `/api/me` | signed in (limited) | Profile, roles, permissions, CSRF token, pending step, organisation name, limits |
 | PATCH | `/api/me` | signed in (limited) | Update display name, e-mail, phone, contact visibility, locale (`sv`/`en`), settings |
 | POST | `/api/me/password` | signed in (limited) | Change password (`current`, `new`) |
-| POST | `/api/me/mfa/setup` | signed in (limited) | Start TOTP enrolment: secret, `otpauth://` URI, QR code (PNG data URI) |
+| POST | `/api/me/mfa/setup` | signed in (limited) | Start TOTP enrolment (body: `password`): secret, `otpauth://` URI, QR code (PNG data URI) |
 | POST | `/api/me/mfa/enable` | signed in (limited) | Confirm enrolment with a code |
 | POST | `/api/me/mfa/disable` | signed in | Disable MFA (password required; refused when MFA is required) |
+| POST | `/api/me/mfa/recovery-codes` | signed in | Replace the recovery codes (body: `password`); returns the new codes once |
+| GET | `/api/me/passkeys` | signed in (limited) | The caller's passkeys |
+| POST | `/api/me/passkeys/begin` | signed in (limited) | Start a passkey registration (body: `password`): `ceremony` id and WebAuthn creation `options` |
+| POST | `/api/me/passkeys/finish` | signed in (limited) | Complete it: `ceremony`, `name`, `credential` (the browser's attestation response as JSON) |
+| POST | `/api/me/passkeys/{id}/delete` | signed in | Remove a passkey (body: `password`) |
+| POST | `/api/me/sessions/end-others` | signed in | Sign out everywhere else |
+| POST | `/api/auth/passkey/begin` | public | Start a passkey sign-in: `ceremony` id and WebAuthn request `options` |
+| POST | `/api/auth/passkey/finish` | public | Complete it: `ceremony`, `credential` (assertion response), optional `token: true`; answers like the password login |
 | GET | `/api/me/history` | signed in | Own activity (`?before=<id of the oldest entry shown>` for paging, 200 per page) |
 | GET | `/api/me/export` | signed in | Download own personal data (JSON) |
 | GET | `/api/events` | signed in | Server-Sent Events stream of change notifications |
@@ -97,6 +105,7 @@ report the caller's level (1 read, 2 write, 3 manage).
 | PATCH | `/api/admin/users/{id}` | perm `users.manage` | Rename, display name, e-mail, `disabled`, `mfa_required`, `reset_mfa`, `unlock`, `roles` (needs `roles.manage`) |
 | POST | `/api/admin/users/{id}/password` | perm `users.manage` | Set a temporary password |
 | DELETE | `/api/admin/users/{id}` | perm `users.manage` | Delete (anonymise) an account |
+| POST | `/api/admin/users/{id}/sign-out` | perm `users.manage` | End every session of the account |
 | GET | `/api/admin/logs` | perm `logs.view` | Audit log (`?before=<entry id>`, `?action=` prefix, `?user=`) |
 | POST | `/api/admin/backup` | perm `backup.manage` | Stream an encrypted backup (`{"passphrase"}`) |
 | POST | `/api/admin/export` | perm `backup.manage` and `users.manage` | Members CSV (`{"kind": "members", "passphrase": optional}`) |
@@ -250,3 +259,19 @@ State-changing requests from browsers must come from the server's own origin
 otherwise the answer is 403 `cross_origin`. Requests that authenticate with a
 bearer token are exempt, as are clients that send no `Origin` header at all.
 No CORS headers are sent.
+
+## Sign-in details
+
+* `POST /api/auth/login` takes `username`, `password` and, when two-step
+  verification is on, `code`: the 6-digit TOTP code or a recovery code.
+  401 `mfa_required` asks for the code; 401 `passkey_required` means the
+  account's only second factor is a passkey.
+* `POST /api/me/mfa/enable` answers with `recovery_codes` (shown once).
+* Changing the password, enrolling or removing a second factor and
+  replacing recovery codes require the current password; 429
+  `account_locked` is returned while the account is locked.
+* When `security.idle_timeout_minutes` is set, web clients mark requests
+  that follow real interaction with `X-User-Active: 1`; only those (and
+  token sessions) extend the session.
+* Limits answer 409 `limit_reached` (too many objects) or 413
+  `quota_exceeded` (storage quota).

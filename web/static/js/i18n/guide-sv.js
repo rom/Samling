@@ -386,7 +386,19 @@ Med tvåstegsverifiering loggar du in med lösenordet och en kod från din telef
 
 För att stänga av skriver du ditt lösenord och väljer [[settings.mfa_disable]] – om inte en administratör kräver tvåstegsverifiering för ditt konto. Har du blivit av med telefonen kan en administratör återställa den åt dig.
 
-> Din version av Samling kan också erbjuda återställningskoder och passnycklar här. Får du återställningskoder ska du spara dem på ett säkert ställe, skilt från telefonen.
+> När du slår på tvåstegsverifiering får du tio återställningskoder. Varje kod fungerar en gång i stället för koden från appen, till exempel om du blir av med telefonen. Spara dem på ett säkert ställe, skilt från telefonen; [[settings.recovery_new]] ersätter dem med en ny uppsättning.
+
+# Passnycklar
+
+Med en passnyckel loggar du in med fingeravtryck, ansikte eller enhetens PIN-kod, utan att skriva lösenord eller kod.
+
+1. Under [[settings.passkeys]] ger du passnyckeln ett namn, anger ditt lösenord och väljer [[settings.passkey_add]].
+2. Följ anvisningarna på din enhet.
+3. Nästa gång väljer du [[login.passkey]] på inloggningssidan.
+
+# Inloggade enheter
+
+[[settings.sessions_end]] loggar ut dig på alla andra telefoner, surfplattor och datorer – gör det om du blir av med en enhet. Om föreningen har satt en tidsgräns loggas du också ut automatiskt efter en stund utan aktivitet.
 
 # Lösenord
 - Under [[settings.change_password]] anger du ditt nuvarande lösenord och det nya två gånger. En mening med flera ord är både stark och lätt att komma ihåg.
@@ -510,7 +522,9 @@ Välj [[common.edit]] på ett konto för att:
 - använda [[admin.reset_mfa]] när någon har blivit av med telefonen, eller [[admin.unlock]] efter för många felaktiga lösenord
 - välja [[admin.delete_user]]. Då raderas personens personuppgifter och privata innehåll, och det går inte att ångra. Det personen har bidragit med på delade platser finns kvar.
 
-> Det måste alltid finnas minst en administratör. Din version kan också erbjuda fler sätt att skydda konton, till exempel återställningskoder, passnycklar, automatisk utloggning efter en tids inaktivitet och en åtgärd som loggar ut en person överallt.
+> Det måste alltid finnas minst en administratör.
+
+Om någon blir av med en telefon eller dator öppnar du personens konto och väljer knappen för att logga ut överallt: alla enheter loggas ut direkt. [[admin.reset_mfa]] tar bort personens autentiseringsapp, återställningskoder och passnycklar, så att de kan ställas in på nytt. Servern kan också ställas in så att personer loggas ut automatiskt efter en stund utan aktivitet.
 
 # Roller och behörigheter
 - Tre roller är inbyggda: [[role.admin]] (allt), [[role.leader]] (skapa kanaler, moderera delat innehåll, föra in beslut, planera möten) och [[role.member]].

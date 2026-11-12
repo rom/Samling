@@ -206,7 +206,10 @@ The Admin section is visible to people with administrative permissions.
   out), **unlock** after too many failed sign-ins.
 * **Reset password** (temporary, signs the person out everywhere).
 * **Two-factor**: require it for an account, or reset it when someone lost
-  their phone. There are no recovery codes.
+  their phone and has no recovery code left. Resetting removes the
+  authenticator app, the recovery codes and any passkeys.
+* **Sign out everywhere**: ends all sessions of an account at once, for
+  example when a device is lost.
 * **Delete**: erases the person's personal data, credentials and private
   content. What they contributed to shared places remains, shown as from a
   deleted user. This cannot be undone.

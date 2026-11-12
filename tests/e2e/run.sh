@@ -9,6 +9,9 @@
 #   --port N    port for the test server (default 8097)
 #   --keep      keep the work directory (screenshots, server log) afterwards
 #   --work DIR  use DIR (must be empty or absent) as work directory and keep it
+#
+# Set E2E_SCRIPT to run another script against the scratch server (used by
+# "make manual-screenshots").
 set -euo pipefail
 
 port=8097
@@ -19,7 +22,7 @@ while [ $# -gt 0 ]; do
 	--port) port="$2"; shift 2 ;;
 	--keep) keep=1; shift ;;
 	--work) work="$2"; keep=1; shift 2 ;;
-	-h | --help) sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+	-h | --help) sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
 	*) echo "unknown argument: $1" >&2; exit 2 ;;
 	esac
 done
@@ -51,4 +54,4 @@ for _ in $(seq 1 50); do
 	sleep 0.1
 done
 
-E2E_URL="http://localhost:$port" E2E_ADMIN_PASSWORD="$password" E2E_OUT="$work/out" node "$root/tests/e2e/smoke.js"
+E2E_URL="http://localhost:$port" E2E_ADMIN_PASSWORD="$password" E2E_OUT="$work/out" node "${E2E_SCRIPT:-$root/tests/e2e/smoke.js}"

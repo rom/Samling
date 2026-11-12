@@ -386,7 +386,19 @@ With two-step verification you sign in with your password and a code from your p
 
 To turn it off, type your password and choose [[settings.mfa_disable]] – unless an administrator requires it for your account. If you lose your phone, an administrator can reset it for you.
 
-> Your version of Samling may also offer recovery codes and passkeys here. If you get recovery codes, keep them somewhere safe, apart from your phone.
+> When you turn on two-step verification you get ten recovery codes. Each works once in place of the code from your app, for example if you lose your phone. Save them somewhere safe, apart from your phone; [[settings.recovery_new]] replaces them with a fresh set.
+
+# Passkeys
+
+A passkey lets you sign in with your fingerprint, face or device PIN, without typing a password or a code.
+
+1. Under [[settings.passkeys]], give the passkey a name, enter your password and choose [[settings.passkey_add]].
+2. Follow your device's instructions.
+3. Next time, choose [[login.passkey]] on the sign-in page.
+
+# Signed-in devices
+
+[[settings.sessions_end]] signs you out on every other phone, tablet and computer, which is the thing to do if a device is lost. If your club has set a time limit, you are also signed out automatically after a period without activity.
 
 # Password
 - Under [[settings.change_password]] you give your current password and the new one twice. A sentence of several words is both strong and easy to remember.
@@ -510,7 +522,9 @@ Choose [[common.edit]] on an account to:
 - use [[admin.reset_mfa]] when someone has lost their phone, or [[admin.unlock]] after too many wrong passwords
 - choose [[admin.delete_user]]. This erases the person's personal data and private content and cannot be undone. What they contributed in shared places remains.
 
-> There must always be at least one administrator. Your version may also offer more ways to protect accounts, such as recovery codes, passkeys, automatic sign-out after a period of inactivity and an action that signs a person out everywhere.
+> There must always be at least one administrator.
+
+If someone loses a phone or computer, open their account and choose the sign-out-everywhere button: every device is signed out at once. [[admin.reset_mfa]] removes the person's authenticator app, recovery codes and passkeys, so they can set them up again. The server can also be set to sign people out automatically after a period without activity.
 
 # Roles and permissions
 - Three roles are built in: [[role.admin]] (everything), [[role.leader]] (create channels, moderate shared content, record decisions, plan meetings) and [[role.member]].

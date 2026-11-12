@@ -5,7 +5,7 @@ DEV_PORT ?= 8080
 DEV_DATA ?= ./data
 GOFLAGS_BUILD = -trimpath -ldflags "-s -w"
 
-.PHONY: help build test test-postgres check-i18n shellcheck e2e vet fmt run-dev clean
+.PHONY: help build test test-postgres check-i18n shellcheck e2e manual-screenshots vet fmt run-dev clean
 
 help: ## show this help
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-14s %s\n", $$1, $$2}'
@@ -25,6 +25,9 @@ shellcheck: ## lint the shell scripts (needs shellcheck)
 
 e2e: ## browser smoke test (needs Node.js + playwright)
 	tests/e2e/run.sh
+
+manual-screenshots: ## regenerate the screenshots of docs/manual.md
+	E2E_SCRIPT=scripts/manual-screenshots.js tests/e2e/run.sh --port 8098
 
 test-postgres: ## run the API tests against PostgreSQL (set SAMLING_TEST_PG_DSN)
 	@test -n "$(SAMLING_TEST_PG_DSN)" || { echo "set SAMLING_TEST_PG_DSN, e.g. postgres://postgres@127.0.0.1:5432/postgres?sslmode=disable"; exit 1; }

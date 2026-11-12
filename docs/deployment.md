@@ -96,6 +96,7 @@ else `./samling.yaml`. Unknown keys are errors. Validate with
 | `server.tls.key` | `SAMLING_TLS_KEY` | | | Private key (PEM) |
 | `server.insecure_http` | `SAMLING_INSECURE_HTTP` | | `false` | Serve plain HTTP (development / behind a proxy) |
 | `server.trusted_proxy` | `SAMLING_TRUSTED_PROXY` | | `false` | Trust `X-Forwarded-For` / `X-Forwarded-Proto` |
+| `server.public_url` | `SAMLING_PUBLIC_URL` | | *(from the request)* | The address people use, e.g. `https://club.example.org`. Passkeys are bound to its host name: set it, and do not change it later |
 | `database.driver` | `SAMLING_DB_DRIVER` | | `sqlite` | `sqlite` or `postgres` |
 | `database.dsn` | `SAMLING_DB_DSN` | | `<data_dir>/samling.db` | SQLite file path or PostgreSQL URL |
 | `storage.backend` | `SAMLING_STORAGE_BACKEND` | | `fs` | `fs` or `s3` |
@@ -107,6 +108,8 @@ else `./samling.yaml`. Unknown keys are errors. Validate with
 | `storage.s3.prefix` | `SAMLING_S3_PREFIX` | | | Key prefix inside the bucket |
 | `storage.s3.insecure` | `SAMLING_S3_INSECURE` | | `false` | Plain HTTP to the S3 endpoint |
 | `storage.max_upload_mb` | `SAMLING_MAX_UPLOAD_MB` | | `50` | Largest upload (MiB) |
+| `storage.user_quota_mb` | `SAMLING_USER_QUOTA_MB` | | `2048` | Total size of the files one account may have uploaded (MiB, 0 = unlimited) |
+| `security.idle_timeout_minutes` | `SAMLING_IDLE_TIMEOUT_MINUTES` | | `0` | Sign out after this long without activity (0 = off) |
 | `security.master_key_file` | `SAMLING_MASTER_KEY_FILE` | | `<data_dir>/master.key` | Master key file (a systemd credential named `master.key` takes precedence) |
 | `security.min_password_length` | `SAMLING_MIN_PASSWORD_LENGTH` | | `12` | Minimum 8 |
 | `security.session_hours` | `SAMLING_SESSION_HOURS` | | `336` | Session lifetime |
@@ -288,7 +291,7 @@ chown -R samling:samling /var/lib/samling && systemctl start samling
 
 Run `restore` as root as shown. Restore
 refuses a non-empty database, a wrong passphrase, a modified file or a
-different schema version. Everyone has to sign in again afterwards.
+backup made by a newer release (older backups are accepted and upgraded). Everyone has to sign in again afterwards.
 
 **Disaster recovery test.** Do the procedure above on a spare machine at
 least once; an untested backup is a hope, not a backup.

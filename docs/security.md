@@ -17,7 +17,7 @@ the integrity of the decision log.
 | Cross-site attacks (XSS, CSRF, clickjacking) | Strict CSP without inline script, SameSite=Strict cookie + CSRF header, frame denial, uploads never rendered in the app's origin |
 | Malicious upload | Size limit, sanitised names, forced download, sandbox CSP |
 | Stolen disk, database file or backup | Encrypted files, encrypted PII fields, encrypted backups; hashed passwords and session tokens. *Not* covered without disk encryption: message texts and titles in the database (see below) |
-| Curious administrator | No implicit access to private content or direct messages; audit log of administrative actions; anonymous ballots are unlinkable even in the database |
+| Curious administrator | No implicit access to private content or direct messages; audit log of administrative actions; anonymous ballots cannot be linked to voters from the database or a backup (see D6 for the limits) |
 | Compromise of the server process | No privileges, systemd sandbox, seccomp, Landlock, optional SELinux domain |
 
 Out of scope: a malicious operating system administrator (root can read the
@@ -41,10 +41,38 @@ master key), and end-to-end encryption between members.
 * **Two-factor (TOTP, RFC 6238)** — users can enable it; administrators can
   require it per account (the account is then limited to the enrolment
   endpoints until done) and reset it. A code cannot be replayed: the last
-  accepted time step is stored. The secret is stored encrypted. There are no
-  recovery codes: a locked-out user needs an administrator
-  (or `samling admin passwd --reset-mfa` for the last administrator — MFA of that account
-  must then be reset by another administrator or in the database).
+  accepted time step is stored and consumed with one conditional update, so
+  not even two parallel requests can use the same code. The secret is stored
+  encrypted. Enrolling requires the current password.
+* **Recovery codes** — enabling two-step verification issues ten one-time
+  codes (80 bits each, shown once, stored as SHA-256 hashes). A code replaces
+  the TOTP code at sign-in and is consumed atomically. They can be replaced
+  by a fresh set (password required) and are removed when two-step
+  verification is turned off or reset.
+* **Passkeys (WebAuthn)** — registered from a signed-in session after
+  re-entering the password; discoverable credentials with user verification
+  required. A passkey signs in without user name or password and counts as a
+  second factor: it satisfies an administrator's MFA requirement, and when a
+  passkey is the account's only second factor a password alone is refused.
+  Challenges are kept server side for five minutes and are single use; a
+  signature counter going backwards (possible copy) is rejected and logged.
+  Passkeys are bound to the site's host name (`server.public_url`), so they
+  need https and do not work when the site is opened by IP address.
+* **Re-authentication** — changing the password, enrolling or removing a
+  second factor and replacing recovery codes all require the current
+  password. Wrong passwords there count towards the account lockout, and
+  when the lock triggers all sessions of the account are ended: a session
+  that is guessing its own password is presumed stolen.
+* **Lost second factor** — an administrator resets it (authenticator app,
+  recovery codes and passkeys); for the last administrator,
+  `samling admin passwd --reset-mfa` on the server does the same.
+* **Idle timeout** — optional (`security.idle_timeout_minutes`): a session
+  without activity for that long ends. Background refreshes of the web
+  client do not count as activity; the client marks requests that follow
+  real interaction.
+* **Sign out everywhere** — a person can end all their other sessions; an
+  account administrator can end all sessions of an account. Open event
+  streams of those sessions are closed at once.
 * **Forced password change** — accounts created or reset by an administrator
   must set a new password before anything else works.
 * **Sessions** — 256-bit random token; only its SHA-256 hash is stored.
@@ -153,6 +181,18 @@ because the final chunk must carry the flag. Passphrase protected files
 (`"SMLPASS1"` + 16 byte salt + stream) derive the key with Argon2id
 (64 MiB, 3 iterations).
 
+### What ciphertexts are bound to
+
+* An encrypted field is bound to its column **and its row**: copying another
+  account's encrypted e-mail or TOTP secret into your own row (with write
+  access to the database but no key) does not decrypt.
+* Every stored file is encrypted with **its own key**, derived from the blob
+  master key and the file's storage key. Somebody with write access to the
+  storage back-end cannot swap two files, and nonces never repeat under one
+  key. Data after the final chunk is rejected.
+* Values and files written by the first release (bound to the column only /
+  one shared key) are upgraded at start-up or remain readable.
+
 ### Key management
 
 * The **master key** is 32 random bytes (base64 in a file). Installed by
@@ -194,9 +234,26 @@ because the final chunk must carry the flag. Passphrase protected files
   `Cross-Origin-Resource-Policy: same-origin`, `Cache-Control: no-store` on
   the API.
 * **Downloads**: always `Content-Disposition: attachment` with
-  `Content-Security-Policy: default-src 'none'; sandbox`; the content type is
-  derived from the file extension, never taken from the uploader. An uploaded
-  HTML or SVG file can therefore not run script in Samling's origin.
+  `Content-Security-Policy: default-src 'none'; sandbox`; the content type is always
+  `application/octet-stream`. An uploaded file can therefore neither run
+  script in Samling's origin when opened, nor be loaded by a page of the
+  site as a script, style sheet or JSON data (the CSP allows `'self'`, so
+  this matters).
+* **Request paths in the client**: ids taken from the address bar or from
+  server data are only used in API paths made of plain segments; the client
+  refuses anything else and ignores routes that are not plain segments. A
+  crafted link can therefore not steer a request (with the person's CSRF
+  token) to another endpoint, and only real API answers are parsed as data.
+* **Text input** is stripped of control characters (line breaks and tabs
+  excepted); display names additionally lose invisible and text-direction
+  characters and must be unique (compared compatibility-normalised and
+  case-insensitively). Look-alike letters from other alphabets are not
+  detected, which is why the client shows the unique `@username` next to
+  names. E-mail addresses must be plain addresses.
+* **Limits**: a per-account storage quota (`storage.user_quota_mb`), limits
+  on the number of lists, boards, polls, documents, groups, events, list
+  items and cards, bounded timestamps, and at most six open event streams
+  per account.
 * **Uploads**: size limit (`storage.max_upload_mb`), file names stripped of
   paths and control characters, stored under random keys (no path built from
   user input). A file can only be attached by the person who uploaded it.
@@ -287,18 +344,28 @@ history.
   restore fail before or while reading, and restore runs in one database
   transaction.
 * Restore is only possible from the server's command line, into an empty
-  installation with the same schema version.
+  installation. Backups of earlier releases can be restored; their data is
+  upgraded at the next start.
+* Rows are written in key order, not storage order, so a backup does not
+  reveal the order in which things happened.
 * Sessions are not part of a backup: everyone signs in again after a restore.
 
 ## Known limitations
 
 * No built-in whole-database encryption (see above).
-* No MFA recovery codes; no WebAuthn/passkeys.
 * No automated master key rotation.
 * Rate limiters and the event hub are in memory: single instance, counters
   reset on restart.
-* Active sessions have a fixed lifetime; there is no idle timeout and no
-  "sign out everywhere" button besides changing the password.
+* The idle timeout is off by default.
+* Anonymous polls: somebody who can observe the database continuously
+  (a snapshot between every two votes) can still tell who cast which ballot.
+  A single copy or backup does not allow that.
+* A backup contains everything, including the master key, private content
+  and direct messages. Whoever holds `backup.manage` and creates a backup
+  can therefore read all of it; so can an account administrator who resets
+  somebody's password and signs in as them (both are in the audit log).
+  "Administrators have no access to private content" holds for the
+  application's interface, not for these two operations.
 * The S3 back-end and the SELinux module are untested.
 * With `security.landlock: on`, a kernel without Landlock support runs
   without the Landlock sandbox. The start-up log line states what is really

@@ -73,6 +73,37 @@ exercised end to end. Nothing is mocked.
 | `TestBackupRestore` | Backup is encrypted, wrong passphrase and tampering rejected, restore into a fresh installation reproduces rows, PII and file contents, restore into a non-empty database refused, encrypted member export, personal data export |
 | `TestPIIEncryptedAtRest` | E-mail, phone and passwords not in clear in the database, session tokens stored hashed, contact visibility in the directory |
 
+### Security regression tests (`internal/app/security_test.go`)
+
+One test per finding of the security audit, plus the sign-in features added with the fixes.
+
+| Test | Guards against |
+|------|----------------|
+| `TestSecICSImportIsLinear` | Calendar files that took quadratic time to parse; over-long lines |
+| `TestSecOneBallotPerVoter` | More than one ballot per voter under parallel requests |
+| `TestSecTimesAreBounded` | Out-of-range times breaking queries for everyone |
+| `TestSecLockoutCountsParallelAttempts` | Parallel wrong passwords under-counting towards the lockout |
+| `TestSecDecisionsSurviveUserDeletion` | Decisions lost, or numbering broken, when an account is deleted |
+| `TestSecStreamLimitPerUser` | One account occupying all event streams |
+| `TestSecStreamEndsWithSession` | Event streams outliving logout, disabling, deletion, password reset or sign-out |
+| `TestSecReauthentication` | Guessing the password or changing sign-in methods with only a session |
+| `TestSecAuditLogHasNoDecisionContent` | Private decision titles and comments in the audit log |
+| `TestSecRolesKeepAnAdministrator` | Role changes removing the last administrator |
+| `TestSecStorageQuota` | Unlimited uploads by one account |
+| `TestSecNoInjectionThroughImport` | Injected lines in calendar exports; control characters in stored text |
+| `TestSecNamesAndEmail` | Duplicate or disguised display names; e-mail values carrying `mailto:` parameters |
+| `TestSecDownloadsAreOpaque` | Uploads served with a script, style or JSON content type |
+| `TestSecCiphertextsAreBoundToTheirRecord` | Moving encrypted fields between rows; swapping stored files |
+| `TestSecLegacyDataIsUpgraded` | Data of the first release becoming unreadable after the format changes |
+| `TestSecAnonymousBallotsUnlinkable` | Matching anonymous ballots to voters from the database or a backup |
+| `TestSecNoHiddenSharesByModerators` | A share the owner of an item can neither see nor remove |
+| `TestSecRecoveryCodes` | Recovery codes: single use, hashed, replaceable, removed with MFA |
+| `TestSecIdleTimeout` | Idle sessions staying valid; background requests extending them |
+| `TestSecSignOutEverywhere` | Sessions surviving "sign out everywhere" (by the user or an administrator) |
+| `TestSecPasskeyEndpoints` | Passkey registration without the password; reusable or mixed-up challenges |
+
+The browser test additionally registers a passkey on a virtual authenticator and signs in with it, signs in with a recovery code, checks that crafted links (`#/lists/..%2F…`) cannot steer requests to another endpoint, steps through the welcome tour, and opens the online help.
+
 ## Verified manually during development
 
 | Check | Result |

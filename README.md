@@ -1,3 +1,5 @@
+<p align="center"><img src="web/static/icons/logo.svg" alt="Samling" height="72"></p>
+
 # Samling
 A simple support tool to manage a club, organisation or group of people
 
@@ -94,6 +96,7 @@ See [docs/testing.md](docs/testing.md).
 |---|---|
 | [Requirements and status](docs/requirements.md) | [Architecture](docs/architecture.md) |
 | [Design decisions](docs/design-decisions.md) | [Security](docs/security.md) |
-| [Deployment and operations](docs/deployment.md) | [User guide](docs/usage.md) |
+| [User manual with screenshots](docs/manual.md) | [Reference guide](docs/usage.md) |
+| [Deployment and operations](docs/deployment.md) | [Security](docs/security.md) |
 | [REST API](docs/api.md) | [Mobile](docs/mobile.md) |
 | [Testing](docs/testing.md) | [Example configuration](samling.example.yaml) |

@@ -1,8 +1,9 @@
 import { html, useState, useRef, t, api, act, download, uploadFile, useLoad, go, userName, fmtDateTime, fmtSize, Icon, Modal, Field, useForm,
   ShareEditor, ShareButton, SharedBadge, Page, Empty, Loading, confirmDelete } from '../lib.js';
+import { CameraButtons, FileView, isImage } from '../media.js';
 
 function Upload({ onClose, folders, folder }) {
-  const [f, , bind] = useForm({ name: '', folder: folder || '', description: '' });
+  const [f, set, bind] = useForm({ name: '', folder: folder || '', description: '' });
   const [shares, setShares] = useState([]);
   const [file, setFile] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -15,7 +16,10 @@ function Upload({ onClose, folders, folder }) {
     if (r) onClose(true);
   };
   return html`<${Modal} title=${t('docs.upload')} onClose=${() => onClose(false)}><form onSubmit=${submit}>
-    <${Field} label=${t('docs.file')}><input type="file" required onChange=${(e) => setFile(e.target.files[0])} /><//>
+    <${Field} label=${t('docs.file')}><input type="file" required=${!file} onChange=${(e) => setFile(e.target.files[0])} /><//>
+    <div class="field-tools">
+      <${CameraButtons} labels onPhoto=${setFile} onText=${(text) => set('description', f.description ? f.description + '\n' + text : text)} />
+      ${file && html`<span class="muted small"><${Icon} name="check" /> ${file.name}</span>`}</div>
     <${Field} label=${t('common.name')} hint=${t('docs.name_hint')}><input ...${bind('name')} maxlength="200" /><//>
     <${Field} label=${t('docs.folder')} hint=${t('docs.folder_hint')}><input ...${bind('folder')} list="folders" /><//>
     <datalist id="folders">${folders.map((x) => html`<option value=${x} />`)}</datalist>
@@ -34,13 +38,13 @@ function Detail({ id }) {
   if (!st.data) return html`<${Page} title=${t('nav.documents')} back="#/documents"><${Loading} state=${st} /><//>`;
   const d = st.data;
   const dl = (v) => act(() => download('GET', `/documents/${id}/download` + (v ? '?version=' + v : ''), undefined, d.name));
-  const newVersion = async (e) => {
-    const file = e.target.files[0];
+  const addVersion = async (file) => {
     if (!file) return;
     const up = await act(() => uploadFile(file));
     if (up && await act(() => api('POST', `/documents/${id}/versions`, { file_id: up.id, comment }), t('docs.version_added'))) { setComment(''); st.reload(); }
-    e.target.value = '';
   };
+  const newVersion = async (e) => { await addVersion(e.target.files[0]); e.target.value = ''; };
+  const current = d.versions.find((v) => v.version === d.version);
   const save = async (e) => {
     e.preventDefault();
     if (await act(() => api('PATCH', '/documents/' + id, edit), t('common.saved'))) { setEdit(null); st.reload(); }
@@ -61,6 +65,7 @@ function Detail({ id }) {
         <div class="row"><${SharedBadge} shared=${d.shared} /><span class="muted">${d.folder ? '/' + d.folder : t('docs.root')}</span>
           <span class="muted">· ${t('docs.owner')}: ${userName(d.owner_id)}</span></div>
         ${d.description && html`<p class="pre">${d.description}</p>`}
+        ${current && isImage(current.file) && html`<div class="files"><${FileView} file=${current.file} /></div>`}
       </div>
       <div class="card"><h2>${t('docs.versions')}</h2>
         <div class="table-wrap"><table><thead><tr><th>${t('docs.version')}</th><th>${t('docs.file')}</th><th>${t('common.when')}</th><th>${t('common.who')}</th><th>${t('docs.comment')}</th><th></th></tr></thead>
@@ -73,7 +78,8 @@ function Detail({ id }) {
         ${d.level >= 2 && html`<div class="add-line">
           <input type="text" placeholder=${t('docs.comment_placeholder')} aria-label=${t('docs.comment')} value=${comment} onInput=${(e) => setComment(e.target.value)} />
           <input type="file" hidden ref=${fileInput} onChange=${newVersion} />
-          <button onClick=${() => fileInput.current.click()}><${Icon} name="upload" /> ${t('docs.new_version')}</button></div>`}
+          <button onClick=${() => fileInput.current.click()}><${Icon} name="upload" /> ${t('docs.new_version')}</button>
+          <${CameraButtons} onPhoto=${addVersion} /></div>`}
       </div>
     </div>
     ${edit && html`<${Modal} title=${t('common.edit')} onClose=${() => setEdit(null)}><form onSubmit=${save}>

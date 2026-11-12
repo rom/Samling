@@ -1,5 +1,6 @@
-import { html, useState, useEffect, useRef, useStore, S, t, api, act, download, uploadFile, useLoad, useLive, go, can, userName, linkify, fmtAgo, fmtSize,
+import { html, useState, useEffect, useRef, useStore, S, t, api, act, uploadFile, useLoad, useLive, go, can, userName, linkify, fmtAgo, setBlocked,
   Icon, Modal, Field, useForm, ShareEditor, ShareButton, Empty, Loading, confirmDelete, toast, errText } from '../lib.js';
+import { Avatar, rich, FormatBar, formatKey, EmojiButton, reactionEmojis, CameraButtons, FileView } from '../media.js';
 
 const dmName = (ch, me) => (ch.members || []).filter((id) => id !== me.id).map(userName).join(', ') || userName(me.id);
 const chName = (ch, me) => (ch.kind === 'dm' ? dmName(ch, me) : ch.name);
@@ -34,43 +35,57 @@ function NewDM({ onClose }) {
     <${Field} label=${t('common.filter')}><input value=${q} onInput=${(e) => setQ(e.target.value)} /><//>
     <div class="rows" role="group" aria-label=${t('chat.recipients')}>${people.map((u) => html`<label key=${u.id}>
       <input type="checkbox" checked=${sel.includes(u.id)} onChange=${(e) => setSel(e.target.checked ? [...sel, u.id] : sel.filter((x) => x !== u.id))} />
-      <span>${u.display_name} <span class="muted small">@${u.username}</span></span></label>`)}
+      <${Avatar} user=${u} size="sm" /><span>${u.display_name} <span class="muted small">@${u.username}</span></span></label>`)}
       ${people.length === 0 && html`<div class="muted">${t('common.nothing')}</div>`}</div>
     <div class="buttons"><button type="button" onClick=${onClose}>${t('common.cancel')}</button>
       <button class="primary" disabled=${sel.length === 0}>${t('chat.start')}</button></div>
   </form><//>`;
 }
 
-export function FileChip({ file }) {
-  return html`<button type="button" class="file-chip" title=${t('common.download')} onClick=${() => act(() => download('GET', '/files/' + file.id, undefined, file.name))}>
-    <${Icon} name="clip" /><span>${file.name}</span><span class="muted nowrap">${fmtSize(file.size)}</span></button>`;
-}
-
-function Message({ m, ch, me, reload }) {
+function Message({ m, ch, me, reload, onReply, reply }) {
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState(m.body);
   const mine = m.user_id === me.id;
   const save = async () => { if (await act(() => api('PATCH', '/messages/' + m.id, { body: text }))) { setEditing(false); reload(); } };
   const del = async () => { if (confirmDelete(t('chat.this_message')) && await act(() => api('DELETE', '/messages/' + m.id))) reload(); };
   const pin = async () => { if (await act(() => api(m.pinned_at ? 'DELETE' : 'POST', `/messages/${m.id}/pin`))) reload(); };
-  if (m.deleted) return html`<div class="msg"><span class="avatar">–</span><div class="body muted"><i>${t('chat.deleted')}</i></div></div>`;
-  return html`<div class=${'msg' + (m.pinned_at ? ' pinned' : '')}>
-    <span class="avatar" aria-hidden="true">${userName(m.user_id).slice(0, 1).toUpperCase()}</span>
+  const react = async (emoji) => { if (await act(() => api('POST', `/messages/${m.id}/reactions`, { emoji }))) reload(); };
+  if (m.deleted) return html`<div class=${'msg' + (reply ? ' reply' : '')}><span class="avatar">–</span><div class="body muted"><i>${t('chat.deleted')}</i></div></div>`;
+  return html`<div class=${'msg' + (m.pinned_at ? ' pinned' : '') + (reply ? ' reply' : '')}>
+    <${Avatar} id=${m.user_id} size=${reply ? 'sm' : ''} />
     <div class="body">
       <div class="meta"><b>${userName(m.user_id)}</b>${S.userMap[m.user_id] && html`<span class="handle">@${S.userMap[m.user_id].username}</span>`}<time>${fmtAgo(m.created_at)}</time>
         ${m.edited_at > 0 && html` · ${t('chat.edited')}`}${m.pinned_at > 0 && html` · <${Icon} name="pin" /> ${t('chat.pinned')}`}</div>
       ${editing
-        ? html`<textarea value=${text} onInput=${(e) => setText(e.target.value)} aria-label=${t('common.edit')}></textarea>
+        ? html`<textarea value=${text} onInput=${(e) => setText(e.target.value)} onKeyDown=${(e) => formatKey(e, setText)} aria-label=${t('common.edit')}></textarea>
             <div class="row"><button class="primary" onClick=${save}>${t('common.save')}</button><button onClick=${() => setEditing(false)}>${t('common.cancel')}</button></div>`
-        : html`<div class="pre">${linkify(m.body)}</div>`}
-      ${m.files.length > 0 && html`<div class="files">${m.files.map((f) => html`<${FileChip} file=${f} key=${f.id} />`)}</div>`}
+        : html`<div class="pre">${rich(m.body)}</div>`}
+      ${m.files.length > 0 && html`<div class="files">${m.files.map((f) => html`<${FileView} file=${f} key=${f.id} />`)}</div>`}
+      ${m.reactions.length > 0 && html`<div class="reactions">${m.reactions.map((r) => html`<button type="button" key=${r.emoji} class="reaction" aria-pressed=${r.mine}
+        aria-label=${t('chat.reaction_n', { emoji: r.emoji, n: r.count })} title=${r.mine ? t('chat.reaction_remove') : t('chat.react')} onClick=${() => react(r.emoji)}>${r.emoji} <b>${r.count}</b></button>`)}</div>`}
     </div>
     <div class="tools">
+      <${EmojiButton} set=${reactionEmojis} label=${t('chat.react')} onPick=${react} />
+      ${onReply && html`<button class="icon-btn" onClick=${onReply} aria-label=${t('chat.comment')} title=${t('chat.comment')}><${Icon} name="reply" /></button>`}
       ${ch.level >= 2 && html`<button class="icon-btn" onClick=${pin} aria-label=${m.pinned_at ? t('chat.unpin') : t('chat.pin')} title=${m.pinned_at ? t('chat.unpin') : t('chat.pin')}><${Icon} name="pin" /></button>`}
       ${mine && html`<button class="icon-btn" onClick=${() => { setText(m.body); setEditing(true); }} aria-label=${t('common.edit')} title=${t('common.edit')}><${Icon} name="edit" /></button>`}
       ${(mine || ch.level >= 3) && html`<button class="icon-btn" onClick=${del} aria-label=${t('common.delete')} title=${t('common.delete')}><${Icon} name="trash" /></button>`}
     </div>
   </div>`;
+}
+
+// CommentBox is the small composer under a message.
+function CommentBox({ onSend, onCancel }) {
+  const [text, setText] = useState('');
+  const ref = useRef();
+  useEffect(() => { ref.current.focus(); }, []);
+  const submit = async (e) => { e.preventDefault(); if (text.trim() && await onSend(text)) setText(''); };
+  return html`<form class="comment-box" onSubmit=${submit}>
+    <input ref=${ref} value=${text} onInput=${(e) => setText(e.target.value)} onKeyDown=${(e) => { if (e.key === 'Escape') { e.stopPropagation(); onCancel(); } else formatKey(e, setText); }}
+      placeholder=${t('chat.comment_placeholder')} aria-label=${t('chat.comment_placeholder')} maxlength="10000" />
+    <${EmojiButton} label=${t('fmt.emoji')} onPick=${(e) => setText(text + e)} />
+    <button class="primary" aria-label=${t('chat.send_comment')} title=${t('chat.send_comment')}><${Icon} name="send" /></button>
+    <button type="button" class="icon-btn" onClick=${onCancel} aria-label=${t('common.cancel')} title=${t('common.cancel')}><${Icon} name="x" /></button></form>`;
 }
 
 function Conversation({ ch, me, onChanged }) {
@@ -81,7 +96,9 @@ function Conversation({ ch, me, onChanged }) {
   const [text, setText] = useState('');
   const [files, setFiles] = useState([]);
   const [busy, setBusy] = useState(false);
+  const [replyTo, setReplyTo] = useState(null);
   const box = useRef();
+  const input = useRef();
   const fileInput = useRef();
   const stick = useRef(true);
 
@@ -124,7 +141,23 @@ function Conversation({ ch, me, onChanged }) {
     if (await act(() => api('POST', `/channels/${ch.id}/messages`, { body: text, file_ids: files.map((f) => f.id) }))) { setText(''); setFiles([]); load(); }
     setBusy(false);
   };
-  const keydown = (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) send(e); };
+  const keydown = (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) send(e); else formatKey(e, setText); };
+  const comment = async (parent, body) => {
+    const ok = await act(() => api('POST', `/channels/${ch.id}/messages`, { body, parent_id: parent }));
+    if (ok) { setReplyTo(null); load(); }
+    return ok;
+  };
+  const addPhoto = async (file) => { setBusy(true); const r = await act(() => uploadFile(file)); if (r) setFiles((old) => [...old, r]); setBusy(false); };
+  // Comments are shown under the message they belong to.
+  const byId = {}, kids = {};
+  (msgs || []).forEach((m) => { byId[m.id] = m; });
+  const roots = (msgs || []).filter((m) => {
+    if (!m.parent_id || !byId[m.parent_id]) return true;
+    (kids[m.parent_id] = kids[m.parent_id] || []).push(m);
+    return false;
+  });
+  const other = ch.kind === 'dm' && (ch.members || []).length === 2 ? ch.members.find((x) => x !== me.id) : null;
+  const blocked = other && S.blocks.includes(other);
   const del = async () => { if (confirmDelete(ch.name) && await act(() => api('DELETE', '/channels/' + ch.id))) { onChanged(); go('chat'); } };
 
   return html`<div class="conv">
@@ -132,28 +165,39 @@ function Conversation({ ch, me, onChanged }) {
       <a class="icon-btn chat-back" href="#/chat" aria-label=${t('common.back')}><${Icon} name="left" /></a>
       <div class="grow"><h1>${ch.kind === 'dm' ? '' : '# '}${chName(ch, me)}</h1>${ch.topic && html`<div class="muted small">${linkify(ch.topic)}</div>`}</div>
       <button onClick=${() => setShowPins(!showPins)} aria-expanded=${showPins}><${Icon} name="pin" /> ${t('chat.pins')} (${pins.length})</button>
+      ${other && html`<button onClick=${() => setBlocked(other, !blocked)} aria-pressed=${blocked}><${Icon} name="block" /> ${blocked ? t('block.undo') : t('block.do')}</button>`}
       ${ch.kind === 'channel' && ch.level >= 3 && html`<${ShareButton} type="channel" id=${ch.id} onDone=${onChanged} />
         <button class="icon-btn danger" onClick=${del} aria-label=${t('common.delete')} title=${t('common.delete')}><${Icon} name="trash" /></button>`}
     </div>
     ${showPins && html`<div class="pins" role="region" aria-label=${t('chat.pins')}>
       ${pins.length === 0 ? html`<span class="muted">${t('chat.no_pins')}</span>` : pins.map((p) => html`<div class="pin" key=${p.id}>
         <${Icon} name="pin" /><div class="grow"><b>${userName(p.user_id)}</b> <span class="muted small">${fmtAgo(p.created_at)}</span>
-          <div class="pre">${linkify(p.body)}</div>
-          ${p.files.length > 0 && html`<div class="files">${p.files.map((f) => html`<${FileChip} file=${f} key=${f.id} />`)}</div>`}</div></div>`)}
+          <div class="pre">${rich(p.body)}</div>
+          ${p.files.length > 0 && html`<div class="files">${p.files.map((f) => html`<${FileView} file=${f} key=${f.id} />`)}</div>`}</div></div>`)}
     </div>`}
     <div class="msgs" ref=${box} onScroll=${onScroll} role="log" aria-live="polite" aria-label=${t('chat.messages')}>
       ${msgs === null ? html`<div class="loading">${t('common.loading')}</div>` : html`
         ${more && msgs.length > 0 && html`<button class="link" onClick=${loadOlder}>${t('chat.older')}</button>`}
         ${msgs.length === 0 && html`<${Empty} icon="chat" text=${t('chat.empty')} />`}
-        ${msgs.map((m) => html`<${Message} key=${m.id} m=${m} ch=${ch} me=${me} reload=${load} />`)}`}
+        ${roots.map((m) => html`<div class="thread-root" key=${m.id}>
+          <${Message} m=${m} ch=${ch} me=${me} reload=${load} reply=${!!m.parent_id} onReply=${ch.level >= 2 && !m.deleted ? () => setReplyTo(m.parent_id || m.id) : null} />
+          ${(kids[m.id] || replyTo === m.id) && html`<div class="thread" role="group" aria-label=${t('chat.comments')}>
+            ${(kids[m.id] || []).map((k) => html`<${Message} key=${k.id} m=${k} ch=${ch} me=${me} reload=${load} reply onReply=${ch.level >= 2 ? () => setReplyTo(m.id) : null} />`)}
+            ${replyTo === m.id && html`<${CommentBox} onSend=${(body) => comment(m.id, body)} onCancel=${() => setReplyTo(null)} />`}</div>`}
+        </div>`)}`}
     </div>
+    ${blocked && html`<div class="notice small" role="status">${t('block.notice', { name: userName(other) })}</div>`}
     ${ch.level >= 2 ? html`<form class="composer" onSubmit=${send}>
-      ${files.length > 0 && html`<div class="files">${files.map((f) => html`<span class="file-chip" key=${f.id}><${Icon} name="clip" /><span>${f.name}</span>
-        <button type="button" class="link" aria-label=${t('common.remove')} onClick=${() => setFiles(files.filter((x) => x.id !== f.id))}><${Icon} name="x" /></button></span>`)}</div>`}
-      <div class="line">
+      ${files.length > 0 && html`<div class="files">${files.map((f) => html`<${FileView} key=${f.id} file=${f} onRemove=${() => setFiles(files.filter((x) => x.id !== f.id))} />`)}</div>`}
+      <div class="toolbar" role="toolbar" aria-label=${t('chat.tools')}>
         <input type="file" multiple hidden ref=${fileInput} onChange=${attach} />
         <button type="button" class="icon-btn" onClick=${() => fileInput.current.click()} aria-label=${t('chat.attach')} title=${t('chat.attach')} disabled=${busy}><${Icon} name="clip" /></button>
-        <textarea rows="1" value=${text} onInput=${(e) => setText(e.target.value)} onKeyDown=${keydown} placeholder=${t('chat.placeholder')} aria-label=${t('chat.placeholder')} maxlength="10000"></textarea>
+        <${CameraButtons} disabled=${busy} onPhoto=${addPhoto} onText=${(x) => setText((old) => (old ? old + '\n' + x : x))} />
+        <span class="sep"></span>
+        <${FormatBar} target=${input} setValue=${setText} />
+      </div>
+      <div class="line">
+        <textarea rows="1" ref=${input} value=${text} onInput=${(e) => setText(e.target.value)} onKeyDown=${keydown} placeholder=${t('chat.placeholder')} aria-label=${t('chat.placeholder')} maxlength="10000"></textarea>
         <button class="primary" disabled=${busy} aria-label=${t('chat.send')}><${Icon} name="send" /></button>
       </div></form>` : html`<div class="composer muted"><${Icon} name="lock" /> ${t('chat.readonly')}</div>`}
   </div>`;

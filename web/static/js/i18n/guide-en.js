@@ -15,7 +15,7 @@ export default {
   'tour.nav.text': 'The menu on the left takes you to every section. Home gives you an overview of what is new.',
   'tour.nav.text_narrow': 'The menu button in the top left corner opens the menu with every section. Home gives you an overview of what is new.',
   'tour.chat.title': 'Chat',
-  'tour.chat.text': 'Talk in channels that many can follow, or send direct messages that only the recipients can read. You can pin important messages and attach files.',
+  'tour.chat.text': 'Talk in channels that many can follow, or send direct messages that only the recipients can read. You can pin important messages, react and comment, and attach files or pictures from the camera.',
   'tour.documents.title': 'Documents',
   'tour.documents.text': 'Keep the club\'s files in one place, sorted into folders. When you upload a new version, the earlier ones are kept.',
   'tour.sharing.title': 'Private until you share',
@@ -131,6 +131,21 @@ Only the participants can read a direct message. Not even an administrator can. 
 - The pin ([[chat.pin]]) keeps something important easy to find. [[chat.pins]] at the top of the conversation lists everything that is pinned. Anyone who may write in the conversation may pin.
 - The pencil and the bin let you edit and delete your own messages. An edited message is marked as such.
 
+# Bold, italic, underline and emoji
+- Select some text and choose [[fmt.bold]], [[fmt.italic]] or [[fmt.underline]] above the message field, or press Ctrl+B, Ctrl+I or Ctrl+U. Marks are put around the text – two asterisks for bold, one for italic, two underscores for underlined – and the text is shown formatted once it is sent.
+- The smiley ([[fmt.emoji]]) inserts an emoji where the cursor is.
+
+# React and comment
+- [[chat.react]] on a message puts a small emoji under it, such as a thumbs up, a heart or a crying face. Select your reaction again to take it away. You can react in channels where you can only read, too.
+- [[chat.comment]] opens a field under the message. Comments are shown indented under the message they belong to, so a discussion stays together.
+
+# Pictures from the camera
+- The camera ([[cam.photo]]) takes a picture and attaches it to your message. Pictures are shown directly in the conversation; select one to see it larger.
+- [[cam.scan]] reads the text in a picture and puts it in the message field. See the topic Pictures and the camera.
+
+# Block direct messages
+If you do not want direct messages from someone, open the conversation with them and choose [[block.do]], or use the same button beside the person under [[nav.people]]. The person can then neither write to you nor start a new conversation with you. They are not told, and channels are not affected. Lift the block with [[block.undo]], in the same place or under [[nav.settings]].
+
 # Channels
 - Creating a channel requires the permission [[perm.channels.create]], which leaders normally have. Use the plus sign beside [[chat.channels]] ([[chat.new_channel]]).
 - The sharing of a channel decides who can read and who can write. A channel that everyone can read but only a few can write in works as a notice board. In such a channel you see a padlock and the text [[chat.readonly]].
@@ -179,6 +194,11 @@ Every earlier version stays in the list under [[docs.versions]] and can still be
 1. Type in the field [[lists.add_placeholder]], choose a priority and a date if the list has them, and choose [[common.add]].
 2. Tick the box when something is done.
 3. Move a row with the arrows and remove it with the bin. In a priority list the order follows the priority instead.
+
+# Owners, pictures and scanned text
+- Choose an [[lists.owner]] for a row to show who takes care of it. Anyone who can change the list can set or change the owner.
+- Under [[att.title]] you can attach files or take a picture with the camera – a receipt, a drawing, the notice board.
+- [[cam.scan]] reads a printed list from a picture. Check the text, and each line becomes a row in the list.
 
 # Good to know
 - A date that has passed is shown in red.
@@ -296,6 +316,11 @@ You can also record a decision straight from an item in the minutes of a meeting
 2. Move a card by dragging it to another column, or use the arrows under the card. The arrows work with the keyboard and on a phone too.
 3. Select a card to open it, change it or remove it.
 
+# Colours and pictures
+- Give a card a [[color.label]] when you open it, for example red for urgent. The colour is shown as a stripe on the card.
+- The owner of the board can choose the [[boards.color]], which makes the board easy to recognise.
+- An opened card has [[att.title]], where you can attach files or a picture from the camera. [[cam.scan]] under the description reads text from a picture into the description.
+
 # Columns
 The owner of the board looks after the columns:
 - [[boards.add_column]] adds a column.
@@ -331,6 +356,8 @@ Choose [[search.advanced]] to get more choices:
 - The tab [[people.directory]] lists all members with name, username and role. Type in the search field to find someone.
 - E-mail and phone are shown for members who have chosen to show them. Otherwise it says [[people.no_contact]]. Select an e-mail address to write a message in your e-mail program.
 - [[people.message]] starts a direct message in the chat.
+- Members can also show an address, interests, specialities and a short presentation. You see only what each person has chosen to show.
+- The crossed circle ([[block.do]]) stops direct messages from that person. Read more in the topic Chat.
 
 # Groups
 The tab [[people.groups]] has two kinds:
@@ -378,6 +405,14 @@ Your choices take effect at once and follow your account to other devices.
 
 Only an administrator can change your username.
 
+# Profile picture and more about you
+- Under [[profile.picture]], choose [[profile.upload]], take a picture with the camera, or pick one of the ready-made pictures. Without a picture, your initial is shown.
+- Under [[profile.more]] you can fill in [[profile.address]], [[profile.interests]], [[profile.specialities]] and [[profile.about]]. Each field is shown to other members only when you tick [[profile.share]] beside it. Account administrators can see the fields either way.
+- Choose [[common.save]] when you are done.
+
+# Blocked people
+[[block.title]] lists the people whose direct messages you have blocked. [[block.undo]] lets them write to you again.
+
 # Two-step verification
 With two-step verification you sign in with your password and a code from your phone, so a stolen password is not enough.
 1. Install an authenticator app on your phone, for example Google Authenticator or Microsoft Authenticator.
@@ -413,6 +448,7 @@ A passkey lets you sign in with your fingerprint, face or device PIN, without ty
   'help.privacy.body': `# What others see
 - Your name, username and roles are shown to all members in the directory.
 - Your e-mail and phone number are shown to other members only if you have ticked [[settings.contact_visible]] under [[nav.settings]]. Otherwise only account administrators see them.
+- Your profile picture is shown to all members. The optional profile fields – address, interests, specialities and presentation – are shown to other members only if you tick [[profile.share]] for each of them.
 - What you write or upload in a shared place can be seen by those it is shared with.
 
 # What stays private
@@ -420,6 +456,8 @@ A passkey lets you sign in with your fingerprint, face or device PIN, without ty
 - Direct messages can only be read by the participants.
 - Your [[nav.history]] is shown only to you.
 - In an anonymous poll, nobody can see how you voted.
+- Text that you scan with the camera is read on your own device. The picture is stored only if you choose to attach it.
+- Nobody is told that you have blocked their direct messages.
 
 # The security log
 Events that matter for security – sign-ins, changes to accounts and roles, changed sharing, backups and exports – are noted with the time, the account and the network address. The log can be read only by those who have been given that permission, and entries are kept for two years.
@@ -432,6 +470,39 @@ Events that matter for security – sign-ins, changes to accounts and roles, cha
 Ask an administrator to delete your account. Your personal data and your private content are then erased. What you have contributed in shared places remains, shown as written by [[common.deleted_user]].
 
 > Samling is installed and run by your own organisation. Ask your administrator if you want to know where the server is, or who is responsible for the personal data.`,
+
+  'help.camera.title': 'Pictures and the camera',
+  'help.camera.intro': 'Take a picture where you are, or let Samling read the text in a picture.',
+  'help.camera.body': `# Take a picture
+Wherever you see the camera button ([[cam.photo]]) you can take a picture straight into Samling:
+- **Chat** – the picture is attached to your message.
+- **Documents** – the picture becomes the document, or a new version of it.
+- **Lists, calendar events, cards on boards, meetings, polls and decisions** – the picture is added under [[att.title]].
+- **Settings** – as your profile picture.
+
+1. Choose [[cam.photo]]. The first time, your browser asks whether Samling may use the camera – allow it.
+2. Aim and choose [[cam.take]].
+
+Without a camera, or if you would rather use a picture you already have, choose [[cam.choose]].
+
+# Scan text
+[[cam.scan]] reads printed text in a picture, so that you do not have to type it.
+1. Choose [[cam.scan]] and take a picture of the text – straight on, close and in good light.
+2. Wait while the text is read. It can take up to a minute the first time.
+3. Check the text and correct it where needed. Tick [[cam.keep_photo]] if you want to keep the picture as well.
+4. Choose [[cam.use_text]].
+
+Where the text ends up:
+- **Chat** – in the message field.
+- **Lists** – each line becomes a row.
+- **Documents, calendar events, cards, polls and decisions** – in the description, or in the text of the decision.
+
+# Good to know
+- The text is read on your own device. The picture is not sent anywhere unless you choose to attach it.
+- Printed text in Swedish and English works best. Handwriting is seldom read correctly.
+- Pictures are made smaller before they are sent, so that they take less of your storage space.
+- Who can see an attached picture follows the sharing of the thing it is attached to.
+- The camera needs a secure (https) connection.`,
 
   'help.accessibility.title': 'Accessibility',
   'help.accessibility.intro': 'Samling is built to work with a keyboard, a screen reader, enlarged text and small screens – and you can adapt it further.',

@@ -189,6 +189,9 @@ func (a *App) hSearch(c *Ctx) error {
 		}
 		for _, p := range people {
 			full := p.DisplayName + "\n" + p.Username + " " + p.Email + " " + p.Phone
+			for _, k := range profileFields { // only what the directory shows this viewer
+				full += " " + p.Profile[k]
+			}
 			if loc := re.FindStringIndex(full); loc != nil && counts["user"] < searchPerType {
 				hits = append(hits, SearchHit{Type: "user", ID: p.ID, Link: p.ID, Title: p.DisplayName,
 					Snippet: strings.TrimSpace(strings.Join([]string{"@" + p.Username, p.Email, p.Phone}, " "))})

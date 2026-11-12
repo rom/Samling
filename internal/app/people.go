@@ -18,6 +18,9 @@ type Person struct {
 	Email       string   `json:"email,omitempty"`
 	Phone       string   `json:"phone,omitempty"`
 	Roles       []string `json:"roles"`
+	Avatar      string   `json:"avatar,omitempty"`
+	// Profile holds the optional profile fields the person shares.
+	Profile map[string]string `json:"profile,omitempty"`
 }
 
 func (a *App) directory(ctx context.Context, viewer *User) ([]Person, error) {
@@ -34,13 +37,24 @@ func (a *App) directory(ctx context.Context, viewer *User) ([]Person, error) {
 		return nil, err
 	}
 	out := []Person{}
-	err = a.DB.Each(ctx, `SELECT id, username, display_name, email_enc, phone_enc, contact_visible FROM users WHERE deleted_at=0 AND disabled=0 ORDER BY LOWER(display_name)`,
+	err = a.DB.Each(ctx, `SELECT id, username, display_name, email_enc, phone_enc, contact_visible, profile_enc, profile_shared, avatar FROM users WHERE deleted_at=0 AND disabled=0 ORDER BY LOWER(display_name)`,
 		nil, func(r *sql.Rows) error {
 			var p Person
-			var e, ph string
+			var e, ph, profEnc, profShared string
 			var vis bool
-			if err := r.Scan(&p.ID, &p.Username, &p.DisplayName, &e, &ph, &vis); err != nil {
+			if err := r.Scan(&p.ID, &p.Username, &p.DisplayName, &e, &ph, &vis, &profEnc, &profShared, &p.Avatar); err != nil {
 				return err
+			}
+			// Each optional field is shown only when its owner shares it
+			// (account managers and the person see all of them).
+			profile, shared := a.decodeProfile(p.ID, profEnc, profShared)
+			for k, v := range profile {
+				if v != "" && (shared[k] || viewer.Can(PermUsers) || viewer.ID == p.ID) {
+					if p.Profile == nil {
+						p.Profile = map[string]string{}
+					}
+					p.Profile[k] = v
+				}
 			}
 			if vis || viewer.Can(PermUsers) || viewer.ID == p.ID {
 				p.Email, _ = a.Keys.DecryptField(e, "users.email", p.ID)
@@ -684,6 +698,9 @@ func (a *App) hAdminDeleteUser(c *Ctx) error {
 			`DELETE FROM channel_reads WHERE user_id=?`,
 			`DELETE FROM passkeys WHERE user_id=?`,
 			`DELETE FROM recovery_codes WHERE user_id=?`,
+			`DELETE FROM dm_blocks WHERE user_id=?`,
+			`DELETE FROM dm_blocks WHERE blocked_id=?`,
+			`DELETE FROM reactions WHERE user_id=?`,
 			`UPDATE activity SET ip='', summary='' WHERE user_id=?`,
 		}
 		// Private (unshared) resources would be unreachable: remove them.
@@ -702,7 +719,7 @@ func (a *App) hAdminDeleteUser(c *Ctx) error {
 			}
 		}
 		if err := tx.Exec(ctx, `UPDATE users SET username=?, display_name='', email_enc='', email_idx='', phone_enc='', password_hash='',
-			totp_secret_enc='', totp_enabled=0, settings='{}', display_key='', disabled=1, deleted_at=? WHERE id=?`, "deleted-"+id[len(id)-16:], a.unix(), id); err != nil {
+			totp_secret_enc='', totp_enabled=0, settings='{}', display_key='', profile_enc='', profile_shared='', avatar='', disabled=1, deleted_at=? WHERE id=?`, "deleted-"+id[len(id)-16:], a.unix(), id); err != nil {
 			return err
 		}
 		return requireAdmins(ctx, tx)

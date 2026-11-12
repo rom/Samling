@@ -65,7 +65,9 @@ report the caller's level (1 read, 2 write, 3 manage).
 | POST | `/api/auth/login` | public | Sign in |
 | POST | `/api/auth/logout` | signed in (limited) | Sign out, revoke the session |
 | GET | `/api/me` | signed in (limited) | Profile, roles, permissions, CSRF token, pending step, organisation name, limits |
-| PATCH | `/api/me` | signed in (limited) | Update display name, e-mail, phone, contact visibility, locale (`sv`/`en`), settings |
+| PATCH | `/api/me` | signed in (limited) | Update display name, e-mail, phone, contact visibility, locale (`sv`/`en`), settings, `avatar` (`""`, `preset:1`–`preset:24`, or `file:<id>` of an own uploaded picture), `profile` (`address`, `interests`, `specialities`, `about`) and `profile_shared` (which of those fields other members may see) |
+| GET | `/api/me/blocks` | signed in | Ids of the people whose direct messages the caller has blocked |
+| PUT / DELETE | `/api/me/blocks/{id}` | signed in | Block / stop blocking direct messages from a person |
 | POST | `/api/me/password` | signed in (limited) | Change password (`current`, `new`) |
 | POST | `/api/me/mfa/setup` | signed in (limited) | Start TOTP enrolment (body: `password`): secret, `otpauth://` URI, QR code (PNG data URI) |
 | POST | `/api/me/mfa/enable` | signed in (limited) | Confirm enrolment with a code |
@@ -86,7 +88,7 @@ report the caller's level (1 read, 2 write, 3 manage).
 
 | Method | Path | Access | Purpose |
 |--------|------|--------|---------|
-| GET | `/api/users` | signed in | Member directory (contact details only when visible) |
+| GET | `/api/users` | signed in | Member directory: `avatar`; contact details and `profile` fields only when their owner shares them (always for the person and for `users.manage`) |
 | GET | `/api/groups` | signed in | Global groups and own local groups, with members |
 | POST | `/api/groups` | signed in; `roles.manage` for scope `global` | Create a group (`scope`: `global` or `local`) |
 | PUT | `/api/groups/{id}` | owner (local) / `roles.manage` (global) | Rename, set members |
@@ -127,7 +129,8 @@ report the caller's level (1 read, 2 write, 3 manage).
 | DELETE | `/api/channels/{id}` | level manage | Delete channel and messages |
 | POST | `/api/dm` | signed in | Open (or find) a direct conversation (`user_ids`) |
 | GET | `/api/channels/{id}/messages` | level read | Messages, oldest first (`?before=<id of the oldest message shown>`, `?limit=` ≤ 200) |
-| POST | `/api/channels/{id}/messages` | level write | Post (`body`, `file_ids`) |
+| POST | `/api/channels/{id}/messages` | level write | Post (`body`, `file_ids`, optional `parent_id` to comment on a message in the same channel; comments are one level deep). `403 dm_blocked` in a direct conversation where a participant has blocked the caller. The body may contain the marks `**bold**`, `*italic*`, `__underline__`; they are stored as written |
+| POST | `/api/messages/{id}/reactions` | level read | Toggle the caller's reaction (`emoji`, one of a fixed set). Messages are returned with `parent_id` and `reactions` (`emoji`, `count`, `mine`) |
 | GET | `/api/channels/{id}/pins` | level read | Pinned messages |
 | POST | `/api/channels/{id}/read` | level read | Mark as read |
 | PATCH | `/api/messages/{id}` | author | Edit |
@@ -139,7 +142,11 @@ report the caller's level (1 read, 2 write, 3 manage).
 | Method | Path | Access | Purpose |
 |--------|------|--------|---------|
 | POST | `/api/files` | signed in | Upload (`multipart/form-data`, field `file`); returns id, name, size |
-| GET | `/api/files/{id}` | uploader, or read access to a channel/document that references it | Download |
+| GET | `/api/files/{id}` | uploader, or read access to a channel/document/attachment that references it | Download |
+| GET | `/api/files/{id}/image` | as above; profile pictures: signed in | The file shown inline, only if its content is a JPEG, PNG, GIF or WebP picture (otherwise 404) |
+| GET | `/api/attachments/{type}/{id}` | level read | Files attached to a `list`, `event`, `card`, `meeting`, `poll` or `decision` (a card follows its board) |
+| POST | `/api/attachments/{type}/{id}` | level write (`poll`, `decision`: manage) | Attach an own upload (`file_id`), at most 20 per item |
+| DELETE | `/api/attachments/{type}/{id}/{file}` | as for POST | Remove an attachment |
 | GET | `/api/documents` | signed in | Visible documents |
 | POST | `/api/documents` | signed in | Create from an uploaded file (`file_id`, `name`, `folder`, `description`, `shares`) |
 | GET | `/api/documents/{id}` | level read | Details and version history |
@@ -161,6 +168,8 @@ report the caller's level (1 read, 2 write, 3 manage).
 | POST | `/api/lists/{id}/items` | level write | Add item (`text`, `priority` 0–3, `due_at`) |
 | PATCH | `/api/lists/{id}/items/{item}` | level write | Update (`text`, `done`, `priority`, `due_at`, `position`) |
 | DELETE | `/api/lists/{id}/items/{item}` | level write | Remove item |
+
+List items accept and return `assignee_id` (the person who owns the task; empty for none).
 
 ### Polls
 
@@ -208,7 +217,7 @@ report the caller's level (1 read, 2 write, 3 manage).
 | Method | Path | Access | Purpose |
 |--------|------|--------|---------|
 | GET | `/api/boards` | signed in | Visible boards |
-| POST | `/api/boards` | signed in | Create (`title`, `description`, `columns`, `shares`) |
+| POST | `/api/boards` | signed in | Create (`title`, `description`, `columns`, `shares`, optional `color`: `red`, `orange`, `yellow`, `green`, `teal`, `blue`, `purple`, `pink`, `gray` or empty; cards take the same `color` field) |
 | GET | `/api/boards/{id}` | level read | Board with columns and cards |
 | PATCH | `/api/boards/{id}` | level manage | Rename, describe |
 | DELETE | `/api/boards/{id}` | level manage | Delete |

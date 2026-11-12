@@ -31,6 +31,15 @@ Status values: **Implemented**, **Partial** (works, with the stated gap),
 | F17 | Kanban boards, private or shared | Implemented | Boards with columns and cards (assignee, due date, ordering, moving between columns). |
 | F18 | Administrator: create, rename, delete accounts, change passwords, manage roles, enable MFA, see logs | Implemented | `internal/app/people.go`. Also disable/unlock accounts, require or reset MFA, custom roles, audit log. |
 | F19 | Responsive design for phones, tablets and computers | Implemented | Single responsive web client. |
+| F21 | Optional profile fields (address, interests, specialities, about) that the person chooses to share, field by field | Implemented | `internal/app/social.go`. Stored encrypted; shared fields appear in the directory and in search. |
+| F22 | Profile photo or a selectable avatar | Implemented | Upload, camera, or one of 24 built-in pictures. |
+| F23 | A person who owns a task in a list | Implemented | `assignee_id` on list items. |
+| F24 | Take a picture with the camera, or scan the text of a picture (OCR), in chat, documents, lists, calendar, boards, polls, decisions | Implemented | Also meetings. Text recognition runs in the browser (Tesseract, Swedish and English, vendored); printed text only. Chat: attachment / message text. Documents: file or new version / description. Lists: attachment / one row per line. Others: attachment / description. |
+| F25 | Colour code boards and cards | Implemented | Nine colours. |
+| F26 | Block direct messages from a specific person | Implemented | Enforced on the server for messages, reactions and new conversations. |
+| F27 | Comment on chat messages | Implemented | One level of comments under a message. |
+| F28 | Bold, italic and underlined text in messages | Implemented | Plain-text marks rendered by the client; toolbar and Ctrl+B/I/U. |
+| F29 | Emoji in messages and reactions (thumbs up, heart, crying, …) | Implemented | Emoji palette for text; 16 reactions. |
 | F20a | Script to set up the system | Implemented | `scripts/setup.sh`. Not executed end-to-end in the development environment (no systemd as PID 1); its building blocks were tested individually, see [testing.md](testing.md). |
 | F20b | Script to create self-signed certificates | Implemented | `scripts/gen-selfsigned-cert.sh` (tested). |
 | F20c | Script to obtain and renew Let's Encrypt certificates | Implemented | `scripts/letsencrypt.sh` (certbot). Not run against Let's Encrypt in development. |

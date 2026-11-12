@@ -73,6 +73,16 @@ exercised end to end. Nothing is mocked.
 | `TestBackupRestore` | Backup is encrypted, wrong passphrase and tampering rejected, restore into a fresh installation reproduces rows, PII and file contents, restore into a non-empty database refused, encrypted member export, personal data export |
 | `TestPIIEncryptedAtRest` | E-mail, phone and passwords not in clear in the database, session tokens stored hashed, contact visibility in the directory |
 
+### `internal/app/social_test.go`
+
+| Test | Covers |
+|------|--------|
+| `TestProfileFieldsAndAvatar` | Optional profile fields: per-field sharing, visibility to others / self / account managers, encryption at rest, search; avatar validation; uploads typed by content; inline pictures only for real pictures |
+| `TestListOwnersAndBoardColours` | Task owner on list items; colour marks on boards and cards, with validation |
+| `TestBlockingDirectMessages` | Blocking stops messages, reactions and new (also group) conversations; channels unaffected; unblocking |
+| `TestCommentsAndReactions` | Comments (one level, same channel, write access); reactions (fixed set, toggle, counts, read access is enough, removed with the message) |
+| `TestAttachments` | Attachments on lists, cards, events, polls, decisions: access levels, own uploads only, file access follows the item, clean-up |
+
 ### Security regression tests (`internal/app/security_test.go`)
 
 One test per finding of the security audit, plus the sign-in features added with the fixes.
@@ -149,7 +159,11 @@ ranked, vote, close), calendar (create, .ics export and import), meetings
 decision from a poll, history), kanban (card, move buttons, drag and drop,
 columns), groups (shared and private), search (wildcard, invalid regex),
 personal history, settings (theme, text size, language, MFA enrolment
-screen, persistence after reload), encrypted backup download, and that the
+screen, persistence after reload), message formatting (and that markup in a
+message stays text), emoji, reactions, comments, a photo taken with a (fake)
+camera, text recognition of a picture into list rows, task owners, colour
+marks, attachments on a card, profile fields and picture, blocking,
+encrypted backup download, and that the
 member sees shared but not private content and no administration menu. It
 fails on any uncaught JavaScript error. It needs Node.js with the
 `playwright` package; it is not part of `make test`.

@@ -21,7 +21,8 @@ const dismissTour = async (p) => {
 const step = async (name, fn) => { try { await fn(); console.log('ok   ' + name); } catch (e) { console.log('FAIL ' + name + ': ' + e.message.split('\n').slice(0,6).join(' | ')); errors.push(name); } };
 
 (async () => {
-  const browser = await chromium.launch();
+  // A fake camera, and no permission question: the camera steps run unattended.
+  const browser = await chromium.launch({ args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'] });
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, locale: 'sv-SE', timezoneId: 'Europe/Stockholm', acceptDownloads: true });
   // The welcome tour is exercised with the second user; elsewhere it is switched off.
   await ctx.addInitScript(() => localStorage.setItem('samling.tour', 'off'));
@@ -274,6 +275,134 @@ const step = async (name, fn) => { try { await fn(); console.log('ok   ' + name)
     await page.getByRole('button', { name: 'Spara' }).click();
     await page.getByRole('heading', { name: 'Mina vänner' }).waitFor();
     await shot('16-groups');
+  });
+
+  await step('chat: formatting, emoji, reactions and comments', async () => {
+    await page.goto(BASE + '/#/chat');
+    await page.getByRole('link', { name: /general/ }).click();
+    const box = page.getByLabel('Skriv ett meddelande');
+    await box.fill('viktigt');
+    await box.press('Control+a');
+    await box.press('Control+b');
+    if ((await box.inputValue()) !== '**viktigt**') throw new Error('Ctrl+B gave ' + (await box.inputValue()));
+    await box.fill('**Städdag** på *lördag* – __ta med handskar__! ');
+    await page.getByRole('toolbar').getByRole('button', { name: 'Infoga emoji' }).click();
+    await page.locator('.emoji-pop').getByRole('button', { name: '🎉' }).click();
+    if (!(await box.inputValue()).includes('🎉')) throw new Error('emoji not inserted');
+    await page.getByRole('button', { name: 'Skicka', exact: true }).click();
+    const msg = page.locator('.thread-root').last().locator('.msg').first();
+    await msg.locator('strong', { hasText: 'Städdag' }).waitFor();
+    await msg.locator('em', { hasText: 'lördag' }).waitFor();
+    await msg.locator('u', { hasText: 'ta med handskar' }).waitFor();
+    // A message that looks like markup stays text.
+    await box.fill('<img src=x onerror=alert(1)> **<b>fet</b>**');
+    await box.press('Enter');
+    await page.locator('.msg strong', { hasText: '<b>fet</b>' }).waitFor();
+    if (await page.locator('.msg .pre img').count()) throw new Error('markup was interpreted');
+    // React, and take the reaction back.
+    await msg.hover();
+    await msg.getByRole('button', { name: 'Reagera' }).click();
+    await msg.locator('.emoji-pop').getByRole('button', { name: '👍' }).click();
+    await msg.locator('.reaction[aria-pressed=true]', { hasText: '1' }).waitFor();
+    await msg.locator('.reaction').click();
+    await msg.locator('.reaction').waitFor({ state: 'detached' });
+    await msg.hover();
+    await msg.getByRole('button', { name: 'Reagera' }).click();
+    await msg.locator('.emoji-pop').getByRole('button', { name: '❤️' }).click();
+    await msg.locator('.reaction').waitFor();
+    // Comment on the message.
+    await msg.hover();
+    await msg.getByRole('button', { name: 'Kommentera' }).click();
+    await page.getByLabel('Skriv en kommentar').fill('Jag kommer!');
+    await page.getByLabel('Skriv en kommentar').press('Enter');
+    await page.locator('.thread .msg', { hasText: 'Jag kommer!' }).waitFor();
+    await shot('50-chat-rich');
+  });
+
+  // A picture of printed text, for the text recognition.
+  const textPicture = async () => {
+    const p = await ctx.newPage();
+    await p.setViewportSize({ width: 900, height: 420 });
+    await p.setContent('<body style="margin:0;background:#fff"><div style="font:54px/1.5 Arial,sans-serif;color:#000;padding:40px">Packa tältet<br>Ring Cecilia<br>Betala avgiften</div></body>');
+    const buf = await p.screenshot({ type: 'png' });
+    await p.close();
+    return buf;
+  };
+
+  await step('camera: a photo in the chat', async () => {
+    await page.getByRole('toolbar').getByRole('button', { name: 'Ta en bild' }).click();
+    const dlg = page.getByRole('dialog', { name: 'Ta en bild' });
+    await dlg.locator('video').waitFor();
+    await page.waitForFunction(() => { const v = document.querySelector('video.camera'); return v && v.videoWidth > 0; });
+    await dlg.getByRole('button', { name: 'Ta bild' }).click();
+    await page.locator('.composer .thumb img').waitFor();
+    await page.getByLabel('Skriv ett meddelande').fill('Så här ser det ut');
+    await page.getByRole('button', { name: 'Skicka', exact: true }).click();
+    const img = page.locator('.msg .thumb img').last();
+    await img.waitFor();
+    await page.waitForFunction(() => { const all = document.querySelectorAll('.msg .thumb img'); const i = all[all.length - 1]; return i && i.complete && i.naturalWidth > 0; });
+    await img.click();
+    await page.getByRole('dialog').locator('img.lightbox').waitFor();
+    await shot('51-chat-photo');
+    await page.keyboard.press('Escape');
+  });
+
+  await step('lists: task owner, attached picture, scanned text becomes items', async () => {
+    await page.goto(BASE + '/#/lists');
+    await page.getByRole('link', { name: /Inför sommarlägret/ }).click();
+    await page.getByLabel('Ansvarig: Köpa mat').selectOption({ label: 'Bertil Berg' });
+    await page.waitForFunction(() => [...document.querySelectorAll('.items li')].some((li) => li.textContent.includes('Köpa mat') && li.querySelector('.avatar')));
+    const att = page.getByRole('group', { name: 'Bilder och filer' });
+    await att.locator('input[type=file]').first().setInputFiles({ name: 'karta.png', mimeType: 'image/png', buffer: await textPicture() });
+    await att.locator('.thumb img').waitFor();
+    await att.getByRole('button', { name: 'Skanna text med kameran' }).click();
+    const dlg = page.getByRole('dialog', { name: 'Skanna text med kameran' });
+    await dlg.locator('input[type=file]').setInputFiles({ name: 'lapp.png', mimeType: 'image/png', buffer: await textPicture() });
+    const text = dlg.getByLabel('Text från bilden');
+    await text.waitFor({ timeout: 120000 });
+    const got = await text.inputValue();
+    if (!/Packa t.ltet/.test(got) || !/Ring Cecilia/.test(got) || !/Betala avgiften/.test(got)) throw new Error('recognised: ' + JSON.stringify(got));
+    await shot('52-scan');
+    await dlg.getByRole('button', { name: 'Använd texten' }).click();
+    await page.locator('.items li', { hasText: 'Ring Cecilia' }).waitFor();
+    await page.locator('.items li', { hasText: 'Betala avgiften' }).waitFor();
+    await shot('53-list-owner');
+  });
+
+  await step('boards: colour marks; a card with a picture', async () => {
+    await page.goto(BASE + '/#/boards');
+    await page.getByRole('link', { name: /Styrelsearbete/ }).click();
+    await page.locator('.board-bar').getByRole('radio', { name: 'Grön' }).click();
+    await page.locator('.board-bar.mark-green').waitFor();
+    await page.locator('.kcard').first().click();
+    const dlg = page.getByRole('dialog', { name: 'Kort' });
+    await dlg.getByRole('radio', { name: 'Röd' }).click();
+    await dlg.getByRole('group', { name: 'Bilder och filer' }).locator('input[type=file]').first().setInputFiles({ name: 'skiss.png', mimeType: 'image/png', buffer: await textPicture() });
+    await dlg.locator('.thumb img').waitFor();
+    await dlg.getByRole('button', { name: 'Spara' }).click();
+    await page.locator('.kcard.mark-red').waitFor();
+    await shot('54-board-colours');
+    await page.goto(BASE + '/#/boards');
+    await page.locator('a.card.mark-green').waitFor();
+  });
+
+  await step('profile: optional fields, picture; blocking direct messages', async () => {
+    await page.goto(BASE + '/#/settings');
+    await page.getByLabel('Intressen', { exact: true }).fill('Orientering och bakning');
+    await page.getByLabel('Adress', { exact: true }).fill('Björkvägen 3');
+    await page.getByLabel('Visa för andra medlemmar: Intressen').check();
+    await page.getByRole('radio', { name: 'Bild 3', exact: true }).click();
+    await page.locator('form.card').getByRole('button', { name: 'Spara' }).click();
+    await page.locator('.who .avatar.preset').waitFor();
+    await shot('55-profile');
+    await page.goto(BASE + '/#/people');
+    await page.getByText('Orientering och bakning').waitFor();
+    await page.getByRole('button', { name: 'Bertil Berg: Blockera direktmeddelanden' }).click();
+    await page.getByText('Blockerad', { exact: true }).waitFor();
+    await shot('56-people');
+    await page.goto(BASE + '/#/settings');
+    await page.locator('.card', { hasText: 'Blockerade personer' }).getByRole('button', { name: 'Sluta blockera' }).click();
+    await page.getByText('Du har inte blockerat någon.').waitFor();
   });
 
   await step('search', async () => {

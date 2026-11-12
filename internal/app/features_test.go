@@ -32,7 +32,9 @@ func TestSecurityHeadersAndStatic(t *testing.T) {
 		}
 	}
 	csp := h.Get("Content-Security-Policy")
-	if !strings.Contains(csp, "script-src 'self'") || strings.Contains(csp, "unsafe") {
+	// 'wasm-unsafe-eval' only permits compiling WebAssembly (the on-device text
+	// recognition); inline script and eval() stay forbidden.
+	if !strings.Contains(csp, "script-src 'self' 'wasm-unsafe-eval';") || strings.Contains(csp, "'unsafe-inline'") || strings.Contains(csp, "'unsafe-eval'") {
 		t.Errorf("weak CSP: %s", csp)
 	}
 	anon.fail(401, "GET", "/api/me", nil)

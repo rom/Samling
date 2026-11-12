@@ -1,6 +1,8 @@
-import { html, useState, useStore, S, setState, t, api, act, errText, toast, download, loadSession, useLoad, fmtDate, Page, Field, useForm, Icon, Badge,
+import { html, useState, useRef, useStore, S, setState, t, api, act, errText, toast, download, uploadFile, userName, setBlocked, loadSession, loadDirectory, useLoad, fmtDate, Page, Field, useForm, Icon, Badge,
   themes, defaultPrefs, applyPrefs, locales, getLocale, setLocale } from '../lib.js';
 import { passkeysSupported, registerPasskey } from '../passkey.js';
+import { Avatar, avatarPresets, CameraButtons, preparePhoto } from '../media.js';
+import { profileFields } from './people.js';
 
 export function PasswordForm({ onDone }) {
   const [f, , bind, , setF] = useForm({ current: '', new: '', repeat: '' });
@@ -127,8 +129,17 @@ export function Settings() {
   const s = useStore();
   const me = s.me;
   const prefs = { ...defaultPrefs, ...(me.settings || {}) };
-  const [f, , bind, check] = useForm({ display_name: me.display_name, email: me.email, phone: me.phone, contact_visible: me.contact_visible });
+  const [f, set, bind, check] = useForm({ display_name: me.display_name, email: me.email, phone: me.phone, contact_visible: me.contact_visible,
+    avatar: me.avatar || '', profile: { ...(me.profile || {}) }, profile_shared: { ...(me.profile_shared || {}) } });
   const [pw, setPw] = useState('');
+  const photoInput = useRef();
+  // A profile photo is cut to a square and made small before it is sent.
+  const setPhoto = async (file) => {
+    let small;
+    try { small = await preparePhoto(file, 512); } catch { toast(t('err.not_image'), 'error'); return; }
+    const up = await act(() => uploadFile(small));
+    if (up) set('avatar', 'file:' + up.id);
+  };
 
   const savePrefs = async (patch) => {
     const next = { ...prefs, ...patch };
@@ -139,7 +150,7 @@ export function Settings() {
   const saveProfile = async (e) => {
     e.preventDefault();
     const u = await act(() => api('PATCH', '/me', f), t('common.saved'));
-    if (u) { setState({ me: { ...S.me, ...u } }); loadSession(); }
+    if (u) { setState({ me: { ...S.me, ...u } }); loadSession(); loadDirectory(); }
   };
   const changeLang = async (l) => {
     setLocale(l);
@@ -188,6 +199,28 @@ export function Settings() {
       </div>
       <label class="check"><input type="checkbox" ...${check('contact_visible')} />
         <span>${t('settings.contact_visible')}<br /><span class="muted small">${t('settings.contact_visible_hint')}</span></span></label>
+
+      <fieldset><legend>${t('profile.picture')}</legend>
+        <div class="row"><${Avatar} user=${{ display_name: f.display_name, avatar: f.avatar }} size="lg" />
+          <input type="file" accept="image/*" hidden ref=${photoInput} onChange=${(e) => { const x = e.target.files[0]; e.target.value = ''; if (x) setPhoto(x); }} />
+          <button type="button" onClick=${() => photoInput.current.click()}><${Icon} name="upload" /> ${t('profile.upload')}</button>
+          <${CameraButtons} labels square onPhoto=${setPhoto} />
+          ${f.avatar && html`<button type="button" onClick=${() => set('avatar', '')}>${t('profile.no_picture')}</button>`}</div>
+        <p class="muted small">${t('profile.picture_hint')}</p>
+        <div class="avatar-grid" role="radiogroup" aria-label=${t('profile.choose')}>
+          ${avatarPresets.map((e, i) => html`<button type="button" key=${i} role="radio" aria-checked=${f.avatar === 'preset:' + (i + 1)} aria-label=${t('profile.avatar_n', { n: i + 1 })}
+            onClick=${() => set('avatar', 'preset:' + (i + 1))}><${Avatar} user=${{ avatar: 'preset:' + (i + 1) }} /></button>`)}</div>
+      </fieldset>
+
+      <fieldset><legend>${t('profile.more')}</legend>
+        <p class="muted small">${t('profile.more_hint')}</p>
+        ${profileFields.map((k) => html`<div class="profile-field" key=${k}>
+          <${Field} label=${t('profile.' + k)}>${k === 'address' || k === 'about'
+            ? html`<textarea rows="2" maxlength="600" value=${f.profile[k] || ''} onInput=${(e) => set('profile', { ...f.profile, [k]: e.target.value })}></textarea>`
+            : html`<input maxlength="600" value=${f.profile[k] || ''} onInput=${(e) => set('profile', { ...f.profile, [k]: e.target.value })} />`}<//>
+          <label class="check"><input type="checkbox" checked=${!!f.profile_shared[k]} onChange=${(e) => set('profile_shared', { ...f.profile_shared, [k]: e.target.checked })} />
+            <span>${t('profile.share')}<span class="sr-only">: ${t('profile.' + k)}</span></span></label></div>`)}
+      </fieldset>
       <div class="buttons"><button class="primary">${t('common.save')}</button></div>
     </form>
 
@@ -213,6 +246,13 @@ export function Settings() {
 
       <h3 style=${{ marginTop: '1.4rem' }}>${t('settings.change_password')}</h3>
       <${PasswordForm} />
+    </div>
+
+    <div class="card"><h2>${t('block.title')}</h2>
+      <p class="muted">${t('block.text')}</p>
+      ${s.blocks.length === 0 ? html`<p class="muted small">${t('block.none')}</p>` : html`<div class="rows">${s.blocks.map((id) => html`<div key=${id}>
+        <${Avatar} id=${id} size="sm" /><span class="grow">${userName(id)}</span>
+        <button onClick=${() => setBlocked(id, false)}>${t('block.undo')}</button></div>`)}</div>`}
     </div>
 
     <div class="card"><h2>${t('settings.privacy')}</h2>

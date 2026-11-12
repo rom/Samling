@@ -13,7 +13,7 @@ var Tables = []string{
 	"polls", "poll_options", "ballots", "ballot_choices", "poll_voters",
 	"events", "meetings", "agenda_items", "decisions", "decision_revisions",
 	"boards", "board_columns", "cards", "activity", "settings",
-	"recovery_codes", "passkeys",
+	"recovery_codes", "passkeys", "reactions", "dm_blocks", "attachments",
 }
 
 // migrations are applied in order; never edit an entry that has been
@@ -350,4 +350,36 @@ CREATE TABLE passkeys (
 );
 CREATE INDEX passkeys_user ON passkeys(user_id);
 CREATE UNIQUE INDEX ballots_one_per_voter ON ballots(poll_id, user_id) WHERE user_id <> ''`,
+	// 3: profile fields and avatar, task owners in lists, colours on boards
+	// and cards, replies and reactions in chat, blocking direct messages,
+	// attachments (photos) on lists, events, polls, decisions and cards.
+	`
+ALTER TABLE users ADD COLUMN profile_enc TEXT NOT NULL DEFAULT '';
+ALTER TABLE users ADD COLUMN profile_shared TEXT NOT NULL DEFAULT '';
+ALTER TABLE users ADD COLUMN avatar TEXT NOT NULL DEFAULT '';
+ALTER TABLE list_items ADD COLUMN assignee_id TEXT NOT NULL DEFAULT '';
+ALTER TABLE boards ADD COLUMN color TEXT NOT NULL DEFAULT '';
+ALTER TABLE cards ADD COLUMN color TEXT NOT NULL DEFAULT '';
+ALTER TABLE messages ADD COLUMN parent_id TEXT NOT NULL DEFAULT '';
+CREATE TABLE reactions (
+  message_id TEXT NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL,
+  emoji TEXT NOT NULL,
+  PRIMARY KEY (message_id, user_id, emoji)
+);
+CREATE TABLE dm_blocks (
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  blocked_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at BIGINT NOT NULL,
+  PRIMARY KEY (user_id, blocked_id)
+);
+CREATE TABLE attachments (
+  res_type TEXT NOT NULL,
+  res_id TEXT NOT NULL,
+  file_id TEXT NOT NULL REFERENCES files(id),
+  user_id TEXT NOT NULL,
+  created_at BIGINT NOT NULL,
+  PRIMARY KEY (res_type, res_id, file_id)
+);
+CREATE INDEX attachments_file ON attachments(file_id)`,
 }

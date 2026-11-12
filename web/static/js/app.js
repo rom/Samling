@@ -1,6 +1,7 @@
 // Application shell: sign-in, navigation and routing to the views.
 import { html, render, useState, useEffect, useStore, S, setState, t, api, act, errText, ApiError, loadSession, loadDirectory, startLive, stopLive,
   useRoute, useLive, Icon, Toasts, ErrorBoundary, Field, useForm, can, locales, getLocale, setLocale } from './lib.js';
+import { Avatar } from './media.js';
 import { Home } from './views/home.js';
 import { Chat } from './views/chat.js';
 import { Documents } from './views/documents.js';
@@ -123,7 +124,7 @@ function Shell() {
       ${admin && link('admin', 'admin')}
       ${link('help', 'help')}
       ${link('settings', 'settings')}
-      <div class="who"><span class="avatar">${(s.me.display_name || '?').slice(0, 1).toUpperCase()}</span>
+      <div class="who"><${Avatar} user=${s.me} />
         <span class="grow">${s.me.display_name}<br /><span class="small">@${s.me.username}</span></span>
         <button class="icon-btn" onClick=${logout} aria-label=${t('nav.logout')} title=${t('nav.logout')}><${Icon} name="logout" /></button></div>
     </nav>

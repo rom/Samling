@@ -1,6 +1,7 @@
 import { html, useState, useEffect, t, api, act, download, useLoad, go, can, userName, linkLabel, safeUrl, fmtDateTime, toInput, fromInput,
   Icon, Modal, Field, useForm, ShareEditor, ShareButton, Badge, Page, Empty, Loading, confirmDelete } from '../lib.js';
 import { eventWhen } from './calendar.js';
+import { Attachments } from '../media.js';
 
 const statusBadge = (m) => html`<${Badge} kind=${m.status === 'finalized' ? 'ok' : m.status === 'in_progress' ? 'warn' : 'info'}>${t('meet.status_' + m.status)}<//>`;
 
@@ -108,7 +109,8 @@ function Detail({ id }) {
       <${Field} label=${t('cal.location')}><input value=${m.location} onInput=${set('location')} disabled=${locked} /><//>
       <${Field} label=${t('cal.link')} hint=${t('cal.link_hint')}><input type="url" value=${m.url} onInput=${set('url')} disabled=${locked} placeholder="https://" /><//>
       <${Field} label=${t('common.description')}><textarea value=${m.description} onInput=${set('description')} disabled=${locked}></textarea><//>
-      <p class="muted small"><${Icon} name="calendar" /> ${t('meet.calendar_note')}</p>${saveBar}</div>`}
+      <p class="muted small"><${Icon} name="calendar" /> ${t('meet.calendar_note')}</p>${saveBar}</div>
+      <div class="card"><${Attachments} type="meeting" id=${id} canEdit=${m.level >= 2 && m.status !== 'finalized'} /></div>`}
 
     ${tab === 1 && html`<div role="tabpanel">
       ${agenda.length === 0 && html`<${Empty} icon="list" text=${t('meet.no_agenda')} />`}

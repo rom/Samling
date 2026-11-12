@@ -29,6 +29,7 @@ changes.
 17. [Help](#17-help)
 18. [On a phone](#18-on-a-phone)
 19. [For administrators](#19-for-administrators)
+20. [Pictures and the camera](#20-pictures-and-the-camera)
 
 ---
 
@@ -94,7 +95,7 @@ items or your direct messages.
 Channels are for subjects that concern many; direct messages are private
 conversations between the people in them.
 
-![A channel with a pinned message and an attachment](manual/img/04-chat.png)
+![A channel with a pinned message, comments, reactions and an attachment](manual/img/04-chat.png)
 
 * **Write** in the box at the bottom and press Enter. Shift+Enter makes a new
   line.
@@ -105,6 +106,18 @@ conversations between the people in them.
 * Links are clickable, and links to Teams, Zoom, Meet or Jitsi are shown as a
   **Join** button.
 * **Edit** or **delete** your own messages with the icons on the message.
+* **Format** text with the **B**, *I* and U buttons above the message box, or
+  with Ctrl+B, Ctrl+I and Ctrl+U. The smiley inserts an emoji.
+* **React** to a message with the smiley on the message – a thumbs up, a
+  heart, a crying face and so on. Select your reaction again to remove it.
+* **Comment** on a message with the arrow on the message. Comments are shown
+  indented under the message they belong to.
+* **Take a picture** with the camera button; it is attached to your message
+  and shown in the conversation. **Scan text with the camera** reads the text
+  in a picture into the message box (see [Pictures and the camera](#20-pictures-and-the-camera)).
+* **Block direct messages** from a person with the button at the top of the
+  conversation with them. They can then neither write to you nor start a new
+  conversation with you, and they are not told. Channels are not affected.
 * Start a private conversation with the **+** next to *Direct messages*.
 * A lock on a channel means you can read but not write there, as in an
   announcements channel.
@@ -141,6 +154,11 @@ priority) and simple lists.
 
 Add a line at the bottom, optionally with a priority and a date. Tick an item
 when it is done. Shared lists update for everyone straight away.
+
+* Choose an **owner** for a row to show who takes care of it.
+* Under **Pictures and files** you can attach files or take a picture.
+* **Scan text with the camera** reads a printed list from a picture; each
+  line becomes a row.
 
 ## 7. Polls and votes
 
@@ -224,6 +242,12 @@ Add cards, give them an owner and a date, and drag them between columns. The
 arrow buttons under each card do the same without dragging, which is handy on
 a phone or with a keyboard.
 
+* Give a card a **colour mark** when you open it, for example red for urgent.
+  It is shown as a stripe on the card.
+* The owner of the board can choose the **colour of the board**, which makes
+  it easy to recognise in the list of boards.
+* An opened card can have pictures and files attached.
+
 ## 12. Search
 
 One search covers everything you have access to – and nothing else.
@@ -242,8 +266,10 @@ Search looks at names, titles and text, not inside uploaded files.
 
 ## 13. People and groups
 
-**People** lists the members with the contact details they have chosen to
-show. **Message** starts a direct conversation.
+**People** lists the members with their profile picture and the contact
+details and other information they have chosen to show. **Message** starts a
+direct conversation; the crossed circle beside it blocks direct messages from
+that person.
 
 ![The member list](manual/img/17-people.png)
 
@@ -270,7 +296,15 @@ it.
   stronger keyboard focus marker.
 * **Profile** – your name and contact details, and whether other members may
   see them.
+* **Profile picture** – upload a photo, take one with the camera, or pick one
+  of the ready-made pictures.
+* **More about me** – optional address, interests, specialities and a short
+  presentation. Each field has its own **Show to other members** box; a field
+  is shown to others only when its box is ticked.
+* **Blocked people** – the people whose direct messages you have blocked.
 * **My data** – download a copy of the personal data stored about you.
+
+![Profile picture and optional profile fields](manual/img/33-profile.png)
 
 The dark theme, as an example:
 
@@ -365,3 +399,33 @@ on the server, see [deployment.md](deployment.md).
 Installation, configuration and server administration are described in
 [deployment.md](deployment.md); the security design in
 [security.md](security.md).
+
+## 20. Pictures and the camera
+
+Wherever there is a camera button you can take a picture straight into
+Samling: in the chat, as a document (or a new version of one), on lists,
+calendar events, cards, meetings, polls and decisions (under **Pictures and
+files**), and as your profile picture. The first time, the browser asks
+whether Samling may use the camera. Without a camera you can choose a picture
+you already have.
+
+**Scan text with the camera** reads printed text in a picture so that you do
+not have to type it:
+
+1. Choose **Scan text with the camera** and take a picture of the text –
+   straight on, close and in good light.
+2. Wait while the text is read (up to a minute the first time).
+3. Check and correct the text, then choose **Use the text**.
+
+![Text read from a picture of a note](manual/img/34-scan-text.png)
+
+The text goes into the message box in the chat, becomes rows in a list, or is
+added to the description of a document, event, card, poll or decision.
+
+* The text is read on your own device; the picture is stored only if you
+  choose to attach it.
+* Printed text in Swedish and English works best. Handwriting is seldom read
+  correctly.
+* Who can see an attached picture follows the sharing of the thing it is
+  attached to.
+* The camera needs a secure (https) connection.

@@ -13,7 +13,7 @@ export { html, render, useState, useEffect, useRef, useMemo, useCallback };
 const listeners = new Set();
 export const S = {
   me: null, csrf: '', pending: '', org: 'Samling', maxUploadMB: 50, minPassword: 12,
-  users: [], userMap: {}, groups: [], roles: [], ready: false,
+  users: [], userMap: {}, groups: [], roles: [], blocks: [], ready: false,
 };
 
 let version = 0; // bumped on every change, so late subscribers can catch up
@@ -205,11 +205,17 @@ export async function loadSession() {
 
 export async function loadDirectory() {
   try {
-    const [users, groups, roles] = await Promise.all([api('GET', '/users'), api('GET', '/groups'), api('GET', '/roles')]);
+    const [users, groups, roles, blocks] = await Promise.all([api('GET', '/users'), api('GET', '/groups'), api('GET', '/roles'), api('GET', '/me/blocks')]);
     const userMap = {};
     users.forEach((u) => { userMap[u.id] = u; });
-    setState({ users, userMap, groups, roles: roles.roles, permissions: roles.permissions });
+    setState({ users, userMap, groups, roles: roles.roles, permissions: roles.permissions, blocks });
   } catch { /* shown elsewhere */ }
+}
+
+// setBlocked stops (or allows again) direct messages from one person.
+export async function setBlocked(id, on) {
+  if (!(await act(() => api(on ? 'PUT' : 'DELETE', '/me/blocks/' + id), t(on ? 'block.done' : 'block.undone')))) return;
+  setState({ blocks: on ? [...S.blocks.filter((x) => x !== id), id] : S.blocks.filter((x) => x !== id) });
 }
 
 export const userName = (id) => (S.userMap[id] ? S.userMap[id].display_name : id ? t('common.deleted_user') : '');
@@ -381,6 +387,12 @@ const paths = {
   globe: 'M12 21a9 9 0 100-18 9 9 0 000 18zM3 12h18M12 3c3 3.500 3 14.500 0 18M12 3c-3 3.500-3 14.500 0 18',
   mail: 'M4 6h16v12H4zM4 7l8 6 8-6',
   help: 'M12 21a9 9 0 100-18 9 9 0 000 18zM9.500 9.500a2.500 2.500 0 114 2c-.900.600-1.500 1.200-1.500 2.300M12 17h.01',
+  smile: 'M12 21a9 9 0 100-18 9 9 0 000 18zM8.500 14.500a4.500 4.500 0 007 0M9 9.500h.01M15 9.500h.01',
+  camera: 'M4 8h3.500L9 5.500h6L16.500 8H20v11H4zM12 16.500a3 3 0 100-6 3 3 0 000 6z',
+  scan: 'M4 8V5h3M17 5h3v3M20 16v3h-3M7 19H4v-3M8 10h8M8 14h5',
+  reply: 'M9 7l-5 5 5 5M4 12h10a6 6 0 016 6v1',
+  block: 'M12 21a9 9 0 100-18 9 9 0 000 18zM5.600 5.600l12.800 12.800',
+  image: 'M4 5h16v14H4zM4 16l5-5 4 4 3-3 4 4M15 9.500h.01',
   key: 'M15 9a4 4 0 11-3.900 5H8v2H6v2H3v-3l6.100-6.100A4 4 0 0115 9zM16 8h.01',
 };
 export function Icon({ name, label }) {

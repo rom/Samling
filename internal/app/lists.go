@@ -32,6 +32,8 @@ type ListItem struct {
 	DueAt     int64  `json:"due_at"`
 	CreatedBy string `json:"created_by"`
 	CreatedAt int64  `json:"created_at"`
+	// AssigneeID is the person who owns the task (optional).
+	AssigneeID string `json:"assignee_id"`
 }
 
 type List struct {
@@ -120,10 +122,10 @@ func (a *App) hList(c *Ctx) error {
 		Scan(&l.ID, &l.OwnerID, &l.Title, &l.Kind, &l.CreatedAt, &l.UpdatedAt); err != nil {
 		return err
 	}
-	err = a.DB.Each(c.ctx(), `SELECT id, text, done, priority, position, due_at, created_by, created_at FROM list_items WHERE list_id=? ORDER BY position, created_at`,
+	err = a.DB.Each(c.ctx(), `SELECT id, text, done, priority, position, due_at, created_by, created_at, assignee_id FROM list_items WHERE list_id=? ORDER BY position, created_at`,
 		[]any{id}, func(r *sql.Rows) error {
 			var i ListItem
-			if err := r.Scan(&i.ID, &i.Text, &i.Done, &i.Priority, &i.Position, &i.DueAt, &i.CreatedBy, &i.CreatedAt); err != nil {
+			if err := r.Scan(&i.ID, &i.Text, &i.Done, &i.Priority, &i.Position, &i.DueAt, &i.CreatedBy, &i.CreatedAt, &i.AssigneeID); err != nil {
 				return err
 			}
 			l.Items = append(l.Items, i)
@@ -178,6 +180,23 @@ type itemIn struct {
 	Priority *int    `json:"priority"`
 	Position *int    `json:"position"`
 	DueAt    *int64  `json:"due_at"`
+	// AssigneeID: the person who owns the task; "" for nobody.
+	AssigneeID *string `json:"assignee_id"`
+}
+
+// checkAssignee accepts an empty value or the id of an existing account.
+func checkAssignee(ctx context.Context, q db.Q, id string) error {
+	if id == "" {
+		return nil
+	}
+	var n int
+	if err := q.Row(ctx, `SELECT COUNT(*) FROM users WHERE id=? AND deleted_at=0`, id).Scan(&n); err != nil {
+		return err
+	}
+	if n == 0 {
+		return errBad("unknown_user")
+	}
+	return nil
 }
 
 func (a *App) hAddItem(c *Ctx) error {
@@ -211,8 +230,15 @@ func (a *App) hAddItem(c *Ctx) error {
 		if err := tx.Row(c.ctx(), `SELECT COALESCE(MAX(position),0)+1 FROM list_items WHERE list_id=?`, id).Scan(&pos); err != nil {
 			return err
 		}
-		if err := tx.Exec(c.ctx(), `INSERT INTO list_items (id,list_id,text,priority,position,due_at,created_by,created_at) VALUES (?,?,?,?,?,?,?,?)`,
-			iid, id, clean(*in.Text, 500), prio, pos, due, c.U.ID, now); err != nil {
+		assignee := ""
+		if in.AssigneeID != nil {
+			assignee = *in.AssigneeID
+		}
+		if err := checkAssignee(c.ctx(), tx, assignee); err != nil {
+			return err
+		}
+		if err := tx.Exec(c.ctx(), `INSERT INTO list_items (id,list_id,text,priority,position,due_at,created_by,created_at,assignee_id) VALUES (?,?,?,?,?,?,?,?,?)`,
+			iid, id, clean(*in.Text, 500), prio, pos, due, c.U.ID, now, assignee); err != nil {
 			return err
 		}
 		return tx.Exec(c.ctx(), `UPDATE lists SET updated_at=? WHERE id=?`, now, id)
@@ -251,6 +277,14 @@ func (a *App) hUpdateItem(c *Ctx) error {
 		}
 		if in.Priority != nil {
 			if err := tx.Exec(ctx, `UPDATE list_items SET priority=? WHERE id=?`, min(max(*in.Priority, 0), 3), iid); err != nil {
+				return err
+			}
+		}
+		if in.AssigneeID != nil {
+			if err := checkAssignee(ctx, tx, *in.AssigneeID); err != nil {
+				return err
+			}
+			if err := tx.Exec(ctx, `UPDATE list_items SET assignee_id=? WHERE id=?`, *in.AssigneeID, iid); err != nil {
 				return err
 			}
 		}
@@ -327,6 +361,7 @@ type Card struct {
 	Position    int    `json:"position"`
 	CreatedBy   string `json:"created_by"`
 	UpdatedAt   int64  `json:"updated_at"`
+	Color       string `json:"color"` // colour code, see colorNames
 }
 
 type Column struct {
@@ -341,6 +376,7 @@ type Board struct {
 	Title       string   `json:"title"`
 	Description string   `json:"description"`
 	UpdatedAt   int64    `json:"updated_at"`
+	Color       string   `json:"color"`
 	Shared      bool     `json:"shared"`
 	Cards       int      `json:"card_count"`
 	Level       int      `json:"level,omitempty"`
@@ -351,13 +387,13 @@ type Board struct {
 func (a *App) hBoards(c *Ctx) error {
 	vis, args := visible(c.U, "board", "b")
 	out := []Board{}
-	err := a.DB.Each(c.ctx(), `SELECT b.id, b.owner_id, b.title, b.description, b.updated_at,
+	err := a.DB.Each(c.ctx(), `SELECT b.id, b.owner_id, b.title, b.description, b.updated_at, b.color,
 		(SELECT COUNT(*) FROM acl a WHERE a.res_type='board' AND a.res_id=b.id),
 		(SELECT COUNT(*) FROM cards k WHERE k.board_id=b.id)
 		FROM boards b WHERE `+vis+` ORDER BY b.updated_at DESC`, args, func(r *sql.Rows) error {
 		var b Board
 		var shares int
-		if err := r.Scan(&b.ID, &b.OwnerID, &b.Title, &b.Description, &b.UpdatedAt, &shares, &b.Cards); err != nil {
+		if err := r.Scan(&b.ID, &b.OwnerID, &b.Title, &b.Description, &b.UpdatedAt, &b.Color, &shares, &b.Cards); err != nil {
 			return err
 		}
 		b.Shared = shares > 0
@@ -376,6 +412,7 @@ func (a *App) hCreateBoard(c *Ctx) error {
 		Description string   `json:"description"`
 		Columns     []string `json:"columns"`
 		Shares      []Share  `json:"shares"`
+		Color       string   `json:"color"`
 	}
 	if err := c.Bind(&in); err != nil {
 		return err
@@ -386,6 +423,9 @@ func (a *App) hCreateBoard(c *Ctx) error {
 	if len(in.Columns) == 0 || len(in.Columns) > 12 {
 		return errBad("invalid_columns")
 	}
+	if !colorNames[in.Color] {
+		return errBad("invalid_color")
+	}
 	shares, err := a.createShares(c, in.Shares)
 	if err != nil {
 		return err
@@ -395,8 +435,8 @@ func (a *App) hCreateBoard(c *Ctx) error {
 	}
 	id, now := crypto.NewID(), a.unix()
 	err = a.DB.InTx(c.ctx(), func(tx *db.Tx) error {
-		if err := tx.Exec(c.ctx(), `INSERT INTO boards (id,owner_id,title,description,created_at,updated_at) VALUES (?,?,?,?,?,?)`,
-			id, c.U.ID, in.Title, clean(in.Description, 1000), now, now); err != nil {
+		if err := tx.Exec(c.ctx(), `INSERT INTO boards (id,owner_id,title,description,color,created_at,updated_at) VALUES (?,?,?,?,?,?,?)`,
+			id, c.U.ID, in.Title, clean(in.Description, 1000), in.Color, now, now); err != nil {
 			return err
 		}
 		for i, col := range in.Columns {
@@ -423,8 +463,8 @@ func (a *App) hBoard(c *Ctx) error {
 		return errNotFound
 	}
 	b := Board{Level: lvl, Columns: []Column{}, CardList: []Card{}}
-	if err := a.DB.Row(c.ctx(), `SELECT id, owner_id, title, description, updated_at FROM boards WHERE id=?`, id).
-		Scan(&b.ID, &b.OwnerID, &b.Title, &b.Description, &b.UpdatedAt); err != nil {
+	if err := a.DB.Row(c.ctx(), `SELECT id, owner_id, title, description, updated_at, color FROM boards WHERE id=?`, id).
+		Scan(&b.ID, &b.OwnerID, &b.Title, &b.Description, &b.UpdatedAt, &b.Color); err != nil {
 		return err
 	}
 	err = a.DB.Each(c.ctx(), `SELECT id, title, position FROM board_columns WHERE board_id=? ORDER BY position`, []any{id}, func(r *sql.Rows) error {
@@ -438,10 +478,10 @@ func (a *App) hBoard(c *Ctx) error {
 	if err != nil {
 		return err
 	}
-	err = a.DB.Each(c.ctx(), `SELECT id, column_id, title, description, assignee_id, due_at, position, created_by, updated_at FROM cards WHERE board_id=? ORDER BY position, id`,
+	err = a.DB.Each(c.ctx(), `SELECT id, column_id, title, description, assignee_id, due_at, position, created_by, updated_at, color FROM cards WHERE board_id=? ORDER BY position, id`,
 		[]any{id}, func(r *sql.Rows) error {
 			var k Card
-			if err := r.Scan(&k.ID, &k.ColumnID, &k.Title, &k.Description, &k.AssigneeID, &k.DueAt, &k.Position, &k.CreatedBy, &k.UpdatedAt); err != nil {
+			if err := r.Scan(&k.ID, &k.ColumnID, &k.Title, &k.Description, &k.AssigneeID, &k.DueAt, &k.Position, &k.CreatedBy, &k.UpdatedAt, &k.Color); err != nil {
 				return err
 			}
 			b.CardList = append(b.CardList, k)
@@ -458,6 +498,7 @@ func (a *App) hUpdateBoard(c *Ctx) error {
 	var in struct {
 		Title       string `json:"title"`
 		Description string `json:"description"`
+		Color       string `json:"color"`
 	}
 	if err := c.Bind(&in); err != nil {
 		return err
@@ -468,7 +509,10 @@ func (a *App) hUpdateBoard(c *Ctx) error {
 	if in.Title = clean(in.Title, 120); in.Title == "" {
 		return errBad("title_required")
 	}
-	if err := a.DB.Exec(c.ctx(), `UPDATE boards SET title=?, description=?, updated_at=? WHERE id=?`, in.Title, clean(in.Description, 1000), a.unix(), id); err != nil {
+	if !colorNames[in.Color] {
+		return errBad("invalid_color")
+	}
+	if err := a.DB.Exec(c.ctx(), `UPDATE boards SET title=?, description=?, color=?, updated_at=? WHERE id=?`, in.Title, clean(in.Description, 1000), in.Color, a.unix(), id); err != nil {
 		return err
 	}
 	a.hub.publish(Event{"board", id})
@@ -570,6 +614,7 @@ type cardIn struct {
 	AssigneeID  *string `json:"assignee_id"`
 	DueAt       *int64  `json:"due_at"`
 	Position    *int    `json:"position"`
+	Color       *string `json:"color"`
 }
 
 func (a *App) hAddCard(c *Ctx) error {
@@ -587,6 +632,9 @@ func (a *App) hAddCard(c *Ctx) error {
 	if in.DueAt != nil && !validTime(*in.DueAt) {
 		return errBad("invalid_time")
 	}
+	if in.Color != nil && !colorNames[*in.Color] {
+		return errBad("invalid_color")
+	}
 	if err := limitCount(c.ctx(), a.DB, maxCardsBoard, `SELECT COUNT(*) FROM cards WHERE board_id=?`, id); err != nil {
 		return err
 	}
@@ -599,6 +647,10 @@ func (a *App) hAddCard(c *Ctx) error {
 		if err := tx.Row(c.ctx(), `SELECT COALESCE(MAX(position),0)+1 FROM cards WHERE column_id=?`, *in.ColumnID).Scan(&pos); err != nil {
 			return err
 		}
+		color := ""
+		if in.Color != nil {
+			color = *in.Color
+		}
 		desc, assignee, due := "", "", int64(0)
 		if in.Description != nil {
 			desc = clean(*in.Description, 4000)
@@ -609,8 +661,8 @@ func (a *App) hAddCard(c *Ctx) error {
 		if in.DueAt != nil {
 			due = *in.DueAt
 		}
-		if err := tx.Exec(c.ctx(), `INSERT INTO cards (id,board_id,column_id,title,description,assignee_id,due_at,position,created_by,created_at,updated_at)
-			VALUES (?,?,?,?,?,?,?,?,?,?,?)`, kid, id, *in.ColumnID, clean(*in.Title, 200), desc, clean(assignee, 40), due, pos, c.U.ID, now, now); err != nil {
+		if err := tx.Exec(c.ctx(), `INSERT INTO cards (id,board_id,column_id,title,description,assignee_id,due_at,position,color,created_by,created_at,updated_at)
+			VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`, kid, id, *in.ColumnID, clean(*in.Title, 200), desc, clean(assignee, 40), due, pos, color, c.U.ID, now, now); err != nil {
 			return err
 		}
 		return tx.Exec(c.ctx(), `UPDATE boards SET updated_at=? WHERE id=?`, now, id)
@@ -654,6 +706,14 @@ func (a *App) hUpdateCard(c *Ctx) error {
 		}
 		if in.AssigneeID != nil {
 			if err := set("assignee_id", clean(*in.AssigneeID, 40)); err != nil {
+				return err
+			}
+		}
+		if in.Color != nil {
+			if !colorNames[*in.Color] {
+				return errBad("invalid_color")
+			}
+			if err := set("color", *in.Color); err != nil {
 				return err
 			}
 		}
@@ -701,6 +761,7 @@ func (a *App) hDeleteCard(c *Ctx) error {
 	if err := a.DB.Exec(c.ctx(), `DELETE FROM cards WHERE id=? AND board_id=?`, kid, id); err != nil {
 		return err
 	}
+	a.gcFiles(c.ctx()) // drops attachments of the card
 	a.hub.publish(Event{"board", id})
 	return c.OK()
 }

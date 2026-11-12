@@ -59,6 +59,12 @@ const everyone = (level = 1) => [{ type: 'all', id: '', level }];
     as[u] = await session(u, PW);
     await as[u]('PATCH', '/me', { locale: 'en', settings: u === 'david' ? {} : { tour_done: true } });
   }
+  // Profile pictures and the optional profile fields
+  await admin('PATCH', '/me', { avatar: 'preset:11', profile: { address: 'Björkvägen 3, Björkö', interests: 'Orienteering, baking', specialities: 'First aid, minibus licence' },
+    profile_shared: { interests: true, specialities: true } });
+  for (const [u, n, profile] of [['bertil', 2, { specialities: 'Treasurer, bookkeeping' }], ['cecilia', 6, { interests: 'Football, photography' }], ['elsa', 20, {}], ['farid', 14, { interests: 'Coaching, cooking for many' }]]) {
+    await as[u]('PATCH', '/me', { avatar: 'preset:' + n, profile, profile_shared: { interests: true, specialities: true } });
+  }
   const board = await admin('POST', '/groups', { name: 'The board', description: 'Elected board members', scope: 'global', members: [ids.bertil, ids.elsa] });
   await admin('POST', '/groups', { name: 'Youth section', description: 'Leaders and helpers for the youth teams', scope: 'global', members: [ids.cecilia, ids.david, ids.farid] });
   await admin('POST', '/groups', { name: 'Summer camp helpers', description: '', scope: 'local', members: [ids.cecilia, ids.farid] });
@@ -67,12 +73,18 @@ const everyone = (level = 1) => [{ type: 'all', id: '', level }];
   const general = (await admin('GET', '/channels'))[0].id;
   const news = (await admin('POST', '/channels', { name: 'announcements', topic: 'News from the board – everyone can read, leaders post', shares: [{ type: 'all', id: '', level: 1 }, { type: 'role', id: 'leader', level: 2 }] })).id;
   await admin('POST', '/channels', { name: 'summer-camp', topic: 'Planning the camp 14–18 July', shares: everyone(2) });
-  const pinned = (await admin('POST', `/channels/${general}/messages`, { body: 'Welcome to Björkens IF! House rules and the membership form are in Documents. Ask here if you wonder about anything.' })).id;
+  const pinned = (await admin('POST', `/channels/${general}/messages`, { body: '**Welcome to Björkens IF!** House rules and the membership form are in Documents. Ask here if you wonder about anything.' })).id;
   await admin('POST', `/messages/${pinned}/pin`);
-  await as.cecilia('POST', `/channels/${general}/messages`, { body: 'Hi all! Does anyone have the key to the equipment shed?' });
-  await as.bertil('POST', `/channels/${general}/messages`, { body: 'I have it. I will be at the clubhouse on Saturday from 10.' });
+  const question = (await as.cecilia('POST', `/channels/${general}/messages`, { body: 'Hi all! Does anyone have the key to the equipment shed?' })).id;
+  await as.bertil('POST', `/channels/${general}/messages`, { body: 'I have it. I will be at the clubhouse on *Saturday from 10*.', parent_id: question });
+  await as.cecilia('POST', `/channels/${general}/messages`, { body: 'Perfect, see you then!', parent_id: question });
+  ids.general = general;
   const budget = await as.elsa.upload('Budget 2026.xlsx', 'example spreadsheet');
   await as.elsa('POST', `/channels/${general}/messages`, { body: 'Here is the budget proposal for the annual meeting. We meet online: https://meet.jit.si/bjorkens-if', file_ids: [budget.id] });
+  const proposal = (await admin('GET', `/channels/${general}/messages`)).pop().id;
+  for (const u of ['bertil', 'cecilia', 'farid']) await as[u]('POST', `/messages/${proposal}/reactions`, { emoji: '👍' });
+  await admin('POST', `/messages/${proposal}/reactions`, { emoji: '👍' });
+  await as.cecilia('POST', `/messages/${proposal}/reactions`, { emoji: '🎉' });
   await as.farid('POST', `/channels/${general}/messages`, { body: 'Thanks Elsa! Looks good to me.' });
   await as.bertil('POST', `/channels/${news}/messages`, { body: 'The spring clean-up day is on Saturday. Coffee and buns for everyone who helps!' });
   const dm = (await as.bertil('POST', '/dm', { user_ids: [ids.cecilia] })).id;
@@ -100,7 +112,8 @@ const everyone = (level = 1) => [{ type: 'all', id: '', level }];
   const list = (await admin('POST', '/lists', { title: 'Before the summer camp', kind: 'priority', shares: [{ type: 'group', id: board.id, level: 2 }] })).id;
   ids.list = list;
   for (const [text, priority, due] of [['Book the bus', 3, at(6, 12)], ['Order food for 40 people', 2, at(12, 12)], ['Check the tents', 2, 0], ['Send the packing list to parents', 1, at(20, 12)], ['Buy first-aid supplies', 0, 0]]) {
-    const item = await admin('POST', `/lists/${list}/items`, { text, priority, due_at: due ? Math.floor(due / day) * day : 0 });
+    const owner = { 'Book the bus': ids.bertil, 'Order food for 40 people': ids.farid, 'Check the tents': ids.cecilia }[text] || '';
+    const item = await admin('POST', `/lists/${list}/items`, { text, priority, due_at: due ? Math.floor(due / day) * day : 0, assignee_id: owner });
     if (text === 'Check the tents') await admin('PATCH', `/lists/${list}/items/${item.id}`, { done: true });
   }
   await admin('POST', '/lists', { title: 'My shopping list', kind: 'todo' });
@@ -148,12 +161,13 @@ const everyone = (level = 1) => [{ type: 'all', id: '', level }];
   await as.elsa('PATCH', `/decisions/${dec.id}`, { title: 'Budget for the summer camp', body: 'The board decided to set aside 24 000 kr for the summer camp 2026, including bus and food.', status: 'decided', comment: 'Raised after the bus quote came in' });
 
   // Board
-  const kb = (await admin('POST', '/boards', { title: 'Clubhouse renovation', description: 'What needs doing before the season starts', columns: ['To do', 'In progress', 'Done'], shares: everyone(2) })).id;
+  const kb = (await admin('POST', '/boards', { title: 'Clubhouse renovation', description: 'What needs doing before the season starts', columns: ['To do', 'In progress', 'Done'], color: 'green', shares: everyone(2) })).id;
   ids.board = kb;
   const cols = (await admin('GET', `/boards/${kb}`)).columns;
   for (const [c, title, who, due] of [[0, 'Paint the changing rooms', 'david', at(14, 12)], [0, 'Replace the broken window', '', 0], [0, 'Order new goal nets', 'farid', at(9, 12)],
     [1, 'Fix the roof gutter', 'bertil', at(4, 12)], [1, 'Apply for the municipal grant', 'elsa', at(10, 12)], [2, 'Service the lawn mower', 'bertil', 0], [2, 'Clean out the storage room', 'cecilia', 0]]) {
-    await admin('POST', `/boards/${kb}/cards`, { column_id: cols[c].id, title, assignee_id: who ? ids[who] : '', due_at: due ? Math.floor(due / day) * day : 0 });
+    const color = { 'Replace the broken window': 'red', 'Fix the roof gutter': 'orange', 'Apply for the municipal grant': 'blue', 'Order new goal nets': 'yellow' }[title] || '';
+    await admin('POST', `/boards/${kb}/cards`, { column_id: cols[c].id, title, color, assignee_id: who ? ids[who] : '', due_at: due ? Math.floor(due / day) * day : 0 });
   }
 
   // ---------- screenshots ----------
@@ -172,6 +186,17 @@ const everyone = (level = 1) => [{ type: 'all', id: '', level }];
     await page.locator('.shell').waitFor();
   };
   const ctx = await context();
+  // A "photo" of a note on the notice board, for the picture and text-scanning examples.
+  const note = await ctx.newPage();
+  await note.setViewportSize({ width: 640, height: 420 });
+  await note.setContent(`<body style="margin:0;background:#c9a36b"><div style="margin:28px;padding:26px 34px;background:#fffdf2;box-shadow:0 3px 10px #0006;font:30px/1.55 Arial,sans-serif;color:#111;height:310px">
+    <b>Packing list</b><br>Sleeping bag<br>Rain clothes<br>Torch<br>Swimwear and towel</div></body>`);
+  const notePicture = await note.screenshot({ type: 'png' });
+  await note.close();
+  const pic = await admin.upload('Notice board.png', notePicture);
+  await admin('POST', `/attachments/list/${ids.list}`, { file_id: pic.id });
+  const pic2 = await as.cecilia.upload('Notice board.png', notePicture);
+  await as.cecilia('POST', `/channels/${ids.general}/messages`, { body: 'The packing list is up on the notice board 📌', file_ids: [pic2.id] });
   const page = await ctx.newPage();
   page.setDefaultTimeout(8000);
   const shot = async (name, opts = {}) => {
@@ -218,7 +243,14 @@ const everyone = (level = 1) => [{ type: 'all', id: '', level }];
   await open('people'); await shot('17-people');
   await page.getByRole('tab', { name: /Groups/ }).click(); await shot('18-groups');
   await open('history'); await shot('19-history');
+  await open('lists/' + ids.list);
+  await page.getByRole('button', { name: 'Scan text with the camera' }).click();
+  await page.getByRole('dialog').locator('input[type=file]').setInputFiles({ name: 'note.png', mimeType: 'image/png', buffer: notePicture });
+  await page.getByLabel('Text from the picture').waitFor({ timeout: 120000 });
+  await shot('34-scan-text');
+  await page.keyboard.press('Escape');
   await open('settings'); await shot('20-settings-appearance');
+  await page.getByText('Profile picture', { exact: true }).scrollIntoViewIfNeeded(); await shot('33-profile');
   await page.getByRole('heading', { name: 'Security' }).scrollIntoViewIfNeeded(); await shot('21-settings-security');
   await open('help'); await shot('22-help');
   await open('help/sharing'); await shot('23-help-topic');

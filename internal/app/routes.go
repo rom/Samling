@@ -76,10 +76,18 @@ func (a *App) routes() {
 	a.handle("DELETE /api/messages/{id}", std, a.hDeleteMessage)
 	a.handle("POST /api/messages/{id}/pin", std, a.hPin)
 	a.handle("DELETE /api/messages/{id}/pin", std, a.hPin)
+	a.handle("POST /api/messages/{id}/reactions", std, a.hReact)
+	a.handle("GET /api/me/blocks", std, a.hBlocks)
+	a.handle("PUT /api/me/blocks/{id}", std, a.hBlock)
+	a.handle("DELETE /api/me/blocks/{id}", std, a.hBlock)
 
 	// Files and documents
 	a.handle("POST /api/files", std, a.hUpload)
 	a.handle("GET /api/files/{id}", std, a.hDownload)
+	a.handle("GET /api/files/{id}/image", std, a.hImage)
+	a.handle("GET /api/attachments/{type}/{id}", std, a.hAttachments)
+	a.handle("POST /api/attachments/{type}/{id}", std, a.hAttach)
+	a.handle("DELETE /api/attachments/{type}/{id}/{file}", std, a.hDetach)
 	a.handle("GET /api/documents", std, a.hDocuments)
 	a.handle("POST /api/documents", std, a.hCreateDocument)
 	a.handle("GET /api/documents/{id}", std, a.hDocument)

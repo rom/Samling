@@ -338,6 +338,19 @@ func (a *App) hOpenDM(c *Ctx) error {
 	if err := a.validateShares(c.ctx(), c.U, shares); err != nil {
 		return errBad("invalid_recipients")
 	}
+	// Somebody who has blocked direct messages from the caller cannot be
+	// drawn into a conversation by them.
+	var others []string
+	for _, id := range ids {
+		if id != c.U.ID {
+			others = append(others, id)
+		}
+	}
+	if blocked, err := a.blockedByAny(c.ctx(), c.U.ID, others); err != nil {
+		return err
+	} else if blocked {
+		return &apiError{http.StatusForbidden, "dm_blocked"}
+	}
 	sort.Strings(ids)
 	key := crypto.HashToken(strings.Join(ids, ","))
 	var id string
@@ -381,16 +394,19 @@ type Message struct {
 	PinnedAt  int64      `json:"pinned_at"`
 	PinnedBy  string     `json:"pinned_by"`
 	Files     []FileInfo `json:"files"`
+	// ParentID is set on a comment (reply): the message it belongs to.
+	ParentID  string     `json:"parent_id"`
+	Reactions []Reaction `json:"reactions"`
 }
 
 func (a *App) messages(c *Ctx, where string, args []any) ([]Message, error) {
 	out := []Message{}
 	idx := map[string]int{}
-	err := a.DB.Each(c.ctx(), `SELECT id, channel_id, user_id, body, created_at, edited_at, deleted_at, pinned_at, pinned_by FROM messages WHERE `+where, args,
+	err := a.DB.Each(c.ctx(), `SELECT id, channel_id, user_id, body, created_at, edited_at, deleted_at, pinned_at, pinned_by, parent_id FROM messages WHERE `+where, args,
 		func(r *sql.Rows) error {
-			m := Message{Files: []FileInfo{}}
+			m := Message{Files: []FileInfo{}, Reactions: []Reaction{}}
 			var del int64
-			if err := r.Scan(&m.ID, &m.ChannelID, &m.UserID, &m.Body, &m.CreatedAt, &m.EditedAt, &del, &m.PinnedAt, &m.PinnedBy); err != nil {
+			if err := r.Scan(&m.ID, &m.ChannelID, &m.UserID, &m.Body, &m.CreatedAt, &m.EditedAt, &del, &m.PinnedAt, &m.PinnedBy, &m.ParentID); err != nil {
 				return err
 			}
 			if del != 0 {
@@ -420,6 +436,24 @@ func (a *App) messages(c *Ctx, where string, args []any) ([]Message, error) {
 			}
 			return nil
 		})
+	if err != nil {
+		return out, err
+	}
+	// Reactions, counted per emoji; "mine" marks the caller's own.
+	err = a.DB.Each(c.ctx(), `SELECT message_id, emoji, COUNT(*), SUM(CASE WHEN user_id=? THEN 1 ELSE 0 END) FROM reactions
+		WHERE message_id IN (`+ph+`) GROUP BY message_id, emoji ORDER BY MIN(emoji)`, append([]any{c.U.ID}, ids...), func(r *sql.Rows) error {
+		var mid string
+		var re Reaction
+		var mine int
+		if err := r.Scan(&mid, &re.Emoji, &re.Count, &mine); err != nil {
+			return err
+		}
+		re.Mine = mine > 0
+		if i := idx[mid]; !out[i].Deleted {
+			out[i].Reactions = append(out[i].Reactions, re)
+		}
+		return nil
+	})
 	return out, err
 }
 
@@ -460,6 +494,8 @@ func (a *App) hPostMessage(c *Ctx) error {
 	var in struct {
 		Body    string   `json:"body"`
 		FileIDs []string `json:"file_ids"`
+		// ParentID makes the message a comment on another message.
+		ParentID string `json:"parent_id"`
 	}
 	if err := c.Bind(&in); err != nil {
 		return err
@@ -474,9 +510,25 @@ func (a *App) hPostMessage(c *Ctx) error {
 	if len(in.FileIDs) > 10 {
 		return errBad("too_many_files")
 	}
+	if blocked, err := a.dmBlocked(c.ctx(), c.U.ID, id); err != nil {
+		return err
+	} else if blocked {
+		return &apiError{http.StatusForbidden, "dm_blocked"}
+	}
+	if in.ParentID != "" {
+		// A comment belongs to a message of the same channel. Comments are
+		// one level deep: a comment on a comment joins the original thread.
+		var pch, pparent string
+		if err := a.DB.Row(c.ctx(), `SELECT channel_id, parent_id FROM messages WHERE id=? AND deleted_at=0`, in.ParentID).Scan(&pch, &pparent); err != nil || pch != id {
+			return errBad("unknown_message")
+		}
+		if pparent != "" {
+			in.ParentID = pparent
+		}
+	}
 	mid, now := crypto.NewID(), a.unix()
 	err := a.DB.InTx(c.ctx(), func(tx *db.Tx) error {
-		if err := tx.Exec(c.ctx(), `INSERT INTO messages (id,channel_id,user_id,body,created_at) VALUES (?,?,?,?,?)`, mid, id, c.U.ID, in.Body, now); err != nil {
+		if err := tx.Exec(c.ctx(), `INSERT INTO messages (id,channel_id,user_id,body,created_at,parent_id) VALUES (?,?,?,?,?,?)`, mid, id, c.U.ID, in.Body, now, in.ParentID); err != nil {
 			return err
 		}
 		for _, f := range in.FileIDs {
@@ -551,6 +603,9 @@ func (a *App) hDeleteMessage(c *Ctx) error {
 	}
 	err = a.DB.InTx(c.ctx(), func(tx *db.Tx) error {
 		if err := tx.Exec(c.ctx(), `DELETE FROM message_files WHERE message_id=?`, mid); err != nil {
+			return err
+		}
+		if err := tx.Exec(c.ctx(), `DELETE FROM reactions WHERE message_id=?`, mid); err != nil {
 			return err
 		}
 		return tx.Exec(c.ctx(), `UPDATE messages SET body='', deleted_at=?, pinned_at=0 WHERE id=?`, a.unix(), mid)

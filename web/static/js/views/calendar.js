@@ -1,5 +1,6 @@
 import { html, useState, useRef, useStore, t, api, apiSend, act, download, useLoad, useLive, can, getLocale, userName, linkify, linkLabel, safeUrl, fmtDate, fmtTime,
   toInput, fromInput, toDateInput, fromDateInput, Icon, Modal, Field, useForm, ShareEditor, ShareButton, SharedBadge, Page, Loading, confirmDelete, toast } from '../lib.js';
+import { Attachments, ScanInto } from '../media.js';
 
 const DAY = 86400;
 const startOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
@@ -53,6 +54,7 @@ function EventForm({ event, day, onClose }) {
     <${Field} label=${t('cal.location')}><input ...${bind('location')} maxlength="300" /><//>
     <${Field} label=${t('cal.link')} hint=${t('cal.link_hint')}><input type="url" ...${bind('url')} placeholder="https://" /><//>
     <${Field} label=${t('common.description')}><textarea ...${bind('description')}></textarea><//>
+    <${ScanInto} value=${f.description} onChange=${(v) => set('description', v)} />
     ${!event && html`<${Field} group label=${t('share.who')}><${ShareEditor} value=${shares} onChange=${setShares} /><//>`}
     <div class="buttons"><button type="button" onClick=${() => onClose(false)}>${t('common.cancel')}</button><button class="primary">${t('common.save')}</button></div>
   </form><//>`;
@@ -68,6 +70,7 @@ function EventView({ event: e, me, onClose, onEdit }) {
     ${e.location && html`<p><${Icon} name="home" /> ${e.location}</p>`}
     ${url && html`<p><a href=${url} target="_blank" rel="noopener noreferrer" class="meetlink"><${Icon} name="video" /> ${linkLabel(url) ? t('common.join', { name: linkLabel(url) }) : t('cal.open_link')}</a></p>`}
     ${e.description && html`<p class="pre">${linkify(e.description)}</p>`}
+    ${!e.meeting_id && html`<${Attachments} type="event" id=${e.id} canEdit=${e.owner_id === me.id} />`}
     <p class="row"><${SharedBadge} shared=${e.shared} /><span class="muted small">${userName(e.owner_id)}</span></p>
     <div class="buttons">
       <button onClick=${() => act(() => download('GET', '/calendar/export.ics?id=' + e.id, undefined, 'event.ics'))}><${Icon} name="download" /> .ics</button>

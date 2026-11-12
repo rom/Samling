@@ -235,3 +235,37 @@ encoded `../` in its fragment made an administrator's browser render
 attacker-chosen data and send a state-changing request to another endpoint.
 Either measure alone breaks that chain; both are kept.
 **Trade-off.** Files cannot be previewed in the browser.
+
+## D23 — Pictures are the one kind of upload shown inline
+
+D22 treats uploads as opaque downloads. Photos from the camera and profile
+pictures are only useful when they can be seen, so pictures are an explicit
+exception: the server establishes the type of an upload from its content,
+and a separate endpoint serves JPEG, PNG, GIF and WebP — nothing else —
+inline, with the real type, `nosniff` and a sandbox CSP. SVG stays a
+download because it can carry script. *Alternative considered:* re-encoding
+every picture on the server, which would also strip metadata, but needs
+image codecs (WebP) outside the standard library; the client instead
+re-encodes camera pictures to JPEG before upload, which drops metadata for
+that path.
+
+## D24 — Text recognition in the browser
+
+Scanned text is recognised on the device with a vendored Tesseract
+(WebAssembly). The picture never has to leave the device, the server needs
+no OCR software or extra privileges inside its sandbox, and no third party
+is involved. The costs are about 9 MB of static files (loaded only on use),
+slower recognition on old phones, and `'wasm-unsafe-eval'` in the CSP —
+which allows compiling WebAssembly but still forbids `eval` and inline
+script. *Alternative considered:* OCR on the server (faster, more
+languages), rejected for the reasons above.
+
+## D25 — Message formatting as plain-text marks
+
+Bold, italic and underline are stored as marks in plain text (`**`, `*`,
+`__`) and turned into elements by the client. No HTML is ever stored or
+inserted, so formatting adds no XSS surface, search keeps working on the
+text, and other clients can show the text as it is. Reactions come from a
+fixed set so that they cannot be used to inject arbitrary content, and
+comments are kept to one level to stay readable on a phone.
+

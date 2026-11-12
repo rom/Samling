@@ -1,5 +1,6 @@
 import { html, useState, useEffect, t, api, act, useLoad, useLive, go, can, userName, fmtDateTime, toInput, fromInput, Icon, Modal, Field, useForm,
   ShareEditor, ShareButton, SharedBadge, Badge, Page, Empty, Loading, confirmDelete } from '../lib.js';
+import { Attachments, ScanInto } from '../media.js';
 
 const kinds = ['single', 'multi', 'yesno', 'ranked', 'score'];
 export const optText = (o) => (o.text.startsWith('@') ? t('polls.' + o.text.slice(1)) : o.text);
@@ -17,6 +18,7 @@ function NewPoll({ onClose }) {
   return html`<${Modal} title=${t('polls.new')} onClose=${onClose} wide><form onSubmit=${submit}>
     <${Field} label=${t('polls.question')}><input ...${bind('title')} required maxlength="200" /><//>
     <${Field} label=${t('common.description')}><textarea ...${bind('description')}></textarea><//>
+    <${ScanInto} value=${f.description} onChange=${(v) => set('description', v)} />
     <${Field} label=${t('polls.kind')} hint=${t('polls.kind_hint_' + f.kind)}>
       <select ...${bind('kind')}>${kinds.map((k) => html`<option value=${k}>${t('polls.kind_' + k)}</option>`)}</select><//>
     ${f.kind !== 'yesno' && html`<fieldset><legend>${t('polls.options')}</legend>
@@ -95,6 +97,7 @@ function Detail({ id }) {
       <span class="muted small">${t('polls.by', { name: userName(p.owner_id) })} · ${t('polls.voters', { n: p.voters })}
         ${p.closes_at > 0 && !p.closed ? ' · ' + t('polls.closes_at', { when: fmtDateTime(p.closes_at) }) : ''}${p.closed ? ' · ' + t('polls.closed_at', { when: fmtDateTime(p.closed_at) }) : ''}</span></div>
     ${p.description && html`<p class="pre">${p.description}</p>`}
+    <${Attachments} type="poll" id=${id} canEdit=${p.level >= 3} />
     <div class="stack">
       ${canVote && html`<div class="card"><h2>${t('polls.your_vote')}</h2>
         <p class="muted small">${t('polls.kind_hint_' + p.kind)}${p.kind === 'multi' && p.max_choices > 0 ? ' ' + t('polls.max_n', { n: p.max_choices }) : ''}</p>

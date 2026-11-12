@@ -15,7 +15,7 @@ export default {
   'tour.nav.text': 'Menyn till vänster tar dig till alla delar. Hem ger en överblick över vad som är nytt.',
   'tour.nav.text_narrow': 'Menyknappen uppe till vänster öppnar menyn med alla delar. Hem ger en överblick över vad som är nytt.',
   'tour.chat.title': 'Chatt',
-  'tour.chat.text': 'Prata i kanaler som många kan följa, eller skicka direktmeddelanden som bara mottagarna kan läsa. Du kan fästa viktiga meddelanden och bifoga filer.',
+  'tour.chat.text': 'Prata i kanaler som många kan följa, eller skicka direktmeddelanden som bara mottagarna kan läsa. Du kan fästa viktiga meddelanden, reagera och kommentera, och bifoga filer eller bilder från kameran.',
   'tour.documents.title': 'Dokument',
   'tour.documents.text': 'Samla föreningens filer på ett ställe, sorterade i mappar. När du laddar upp en ny version finns de tidigare kvar.',
   'tour.sharing.title': 'Privat tills du delar',
@@ -131,6 +131,21 @@ Bara deltagarna kan läsa ett direktmeddelande. Inte ens en administratör kan d
 - Nålen ([[chat.pin]]) gör att något viktigt är lätt att hitta igen. [[chat.pins]] högst upp i konversationen visar allt som är fäst. Alla som får skriva i konversationen får fästa.
 - Med pennan och papperskorgen ändrar du och tar bort dina egna meddelanden. Ett ändrat meddelande märks ut.
 
+# Fet, kursiv, understruken och emoji
+- Markera text och välj [[fmt.bold]], [[fmt.italic]] eller [[fmt.underline]] ovanför meddelandefältet, eller tryck Ctrl+B, Ctrl+I eller Ctrl+U. Texten får tecken omkring sig – två asterisker för fet, en för kursiv, två understreck för understruken – och visas formaterad när den har skickats.
+- Smilisen ([[fmt.emoji]]) infogar en emoji där markören står.
+
+# Reagera och kommentera
+- [[chat.react]] på ett meddelande sätter en liten emoji under det, till exempel tummen upp, ett hjärta eller ett gråtande ansikte. Välj din reaktion igen för att ta bort den. Du kan reagera även i kanaler där du bara kan läsa.
+- [[chat.comment]] öppnar ett fält under meddelandet. Kommentarer visas indragna under det meddelande de hör till, så att en diskussion hålls ihop.
+
+# Bilder från kameran
+- Kameran ([[cam.photo]]) tar en bild och bifogar den till ditt meddelande. Bilder visas direkt i samtalet; välj en bild för att se den större.
+- [[cam.scan]] läser av texten i en bild och lägger den i meddelandefältet. Se avsnittet Bilder och kameran.
+
+# Blockera direktmeddelanden
+Om du inte vill ha direktmeddelanden från någon öppnar du samtalet med personen och väljer [[block.do]], eller använder samma knapp bredvid personen under [[nav.people]]. Personen kan då varken skriva till dig eller starta ett nytt samtal med dig. Personen får inget besked, och kanaler påverkas inte. Häv blockeringen med [[block.undo]], på samma ställe eller under [[nav.settings]].
+
 # Kanaler
 - För att skapa en kanal krävs behörigheten [[perm.channels.create]], som ledare vanligtvis har. Använd plustecknet bredvid [[chat.channels]] ([[chat.new_channel]]).
 - Kanalens delning avgör vilka som får läsa och vilka som får skriva. En kanal som alla får läsa men bara några får skriva i fungerar som en anslagstavla. I en sådan kanal ser du ett hänglås och texten [[chat.readonly]].
@@ -179,6 +194,11 @@ Alla tidigare versioner finns kvar i listan under [[docs.versions]] och går for
 1. Skriv i fältet [[lists.add_placeholder]], välj prioritet och datum om listan har det, och välj [[common.add]].
 2. Bocka i rutan när något är klart.
 3. Flytta en rad med pilarna och ta bort den med papperskorgen. I en prioriteringslista styr prioriteten ordningen i stället.
+
+# Ansvariga, bilder och skannad text
+- Välj en [[lists.owner]] för en rad för att visa vem som tar hand om den. Alla som kan ändra listan kan välja eller byta ansvarig.
+- Under [[att.title]] kan du bifoga filer eller ta en bild med kameran – ett kvitto, en skiss, anslagstavlan.
+- [[cam.scan]] läser av en tryckt lista från en bild. Kontrollera texten, så blir varje rad en rad i listan.
 
 # Bra att veta
 - Ett datum som har passerat visas i rött.
@@ -296,6 +316,11 @@ Du kan också föra in ett beslut direkt från en punkt i ett mötesprotokoll, e
 2. Flytta ett kort genom att dra det till en annan kolumn, eller använd pilarna under kortet. Pilarna fungerar också med tangentbordet och på en telefon.
 3. Välj ett kort för att öppna det, ändra det eller ta bort det.
 
+# Färger och bilder
+- Ge ett kort en [[color.label]] när du öppnar det, till exempel rött för brådskande. Färgen visas som en rand på kortet.
+- Tavlans ägare kan välja [[boards.color]], så blir tavlan lätt att känna igen.
+- Ett öppnat kort har [[att.title]], där du kan bifoga filer eller en bild från kameran. [[cam.scan]] under beskrivningen läser in text från en bild till beskrivningen.
+
 # Kolumner
 Tavlans ägare sköter kolumnerna:
 - [[boards.add_column]] lägger till en kolumn.
@@ -331,6 +356,8 @@ Välj [[search.advanced]] för att få fler val:
 - Fliken [[people.directory]] visar alla medlemmar med namn, användarnamn och roll. Skriv i sökfältet för att hitta någon.
 - E-post och telefon visas för de medlemmar som har valt att visa dem. Annars står det [[people.no_contact]]. Välj en e-postadress för att skriva ett meddelande i ditt e-postprogram.
 - [[people.message]] startar ett direktmeddelande i chatten.
+- Medlemmar kan också visa adress, intressen, specialkunskaper och en kort presentation. Du ser bara det som var och en har valt att visa.
+- Den överstrukna cirkeln ([[block.do]]) stoppar direktmeddelanden från personen. Läs mer i avsnittet Chatt.
 
 # Grupper
 På fliken [[people.groups]] finns två sorter:
@@ -378,6 +405,14 @@ Dina val börjar gälla direkt och följer med ditt konto till andra enheter.
 
 Bara en administratör kan ändra ditt användarnamn.
 
+# Profilbild och mer om dig
+- Under [[profile.picture]] väljer du [[profile.upload]], tar en bild med kameran eller väljer en av de färdiga bilderna. Utan bild visas din initial.
+- Under [[profile.more]] kan du fylla i [[profile.address]], [[profile.interests]], [[profile.specialities]] och [[profile.about]]. Varje fält visas för andra medlemmar bara om du bockar för [[profile.share]] bredvid det. Kontoadministratörer kan se fälten ändå.
+- Välj [[common.save]] när du är klar.
+
+# Blockerade personer
+[[block.title]] visar de personer vars direktmeddelanden du har blockerat. Med [[block.undo]] kan de skriva till dig igen.
+
 # Tvåstegsverifiering
 Med tvåstegsverifiering loggar du in med lösenordet och en kod från din telefon. Då räcker det inte med ett stulet lösenord.
 1. Installera en autentiseringsapp på telefonen, till exempel Google Authenticator eller Microsoft Authenticator.
@@ -413,6 +448,7 @@ Med en passnyckel loggar du in med fingeravtryck, ansikte eller enhetens PIN-kod
   'help.privacy.body': `# Det här ser andra
 - Ditt namn, ditt användarnamn och dina roller visas för alla medlemmar i medlemsförteckningen.
 - Din e-post och ditt telefonnummer visas för andra medlemmar bara om du har bockat för [[settings.contact_visible]] under [[nav.settings]]. Annars ser bara kontoadministratörer dem.
+- Din profilbild visas för alla medlemmar. De frivilliga profilfälten – adress, intressen, specialkunskaper och presentation – visas för andra medlemmar bara om du bockar för [[profile.share]] för vart och ett av dem.
 - Det du skriver eller laddar upp på en delad plats kan ses av dem som det delas med.
 
 # Det här förblir privat
@@ -420,6 +456,8 @@ Med en passnyckel loggar du in med fingeravtryck, ansikte eller enhetens PIN-kod
 - Direktmeddelanden kan bara läsas av deltagarna.
 - Din [[nav.history]] visas bara för dig.
 - I en anonym omröstning kan ingen se hur du röstade.
+- Text som du skannar med kameran läses av på din egen enhet. Bilden sparas bara om du väljer att bifoga den.
+- Ingen får veta att du har blockerat deras direktmeddelanden.
 
 # Säkerhetsloggen
 Händelser som har betydelse för säkerheten – inloggningar, ändringar av konton och roller, ändrad delning, säkerhetskopior och exporter – noteras med tidpunkt, konto och nätverksadress. Loggen kan bara läsas av dem som har fått den behörigheten, och posterna sparas i två år.
@@ -432,6 +470,39 @@ Händelser som har betydelse för säkerheten – inloggningar, ändringar av ko
 Be en administratör att ta bort ditt konto. Då raderas dina personuppgifter och ditt privata innehåll. Det du har bidragit med på delade platser finns kvar och visas som skrivet av [[common.deleted_user]].
 
 > Samling installeras och drivs av din egen organisation. Fråga din administratör om du vill veta var servern finns eller vem som ansvarar för personuppgifterna.`,
+
+  'help.camera.title': 'Bilder och kameran',
+  'help.camera.intro': 'Ta en bild där du står, eller låt Samling läsa av texten i en bild.',
+  'help.camera.body': `# Ta en bild
+Överallt där du ser kameraknappen ([[cam.photo]]) kan du ta en bild direkt in i Samling:
+- **Chatt** – bilden bifogas till ditt meddelande.
+- **Dokument** – bilden blir dokumentet, eller en ny version av det.
+- **Listor, kalenderhändelser, kort på tavlor, möten, omröstningar och beslut** – bilden läggs under [[att.title]].
+- **Inställningar** – som din profilbild.
+
+1. Välj [[cam.photo]]. Första gången frågar webbläsaren om Samling får använda kameran – tillåt det.
+2. Sikta och välj [[cam.take]].
+
+Utan kamera, eller om du hellre använder en bild du redan har, väljer du [[cam.choose]].
+
+# Skanna text
+[[cam.scan]] läser av tryckt text i en bild, så att du slipper skriva av den.
+1. Välj [[cam.scan]] och ta en bild av texten – rakt framifrån, nära och i bra ljus.
+2. Vänta medan texten läses av. Det kan ta upp till en minut första gången.
+3. Kontrollera texten och rätta där det behövs. Bocka för [[cam.keep_photo]] om du vill spara bilden också.
+4. Välj [[cam.use_text]].
+
+Här hamnar texten:
+- **Chatt** – i meddelandefältet.
+- **Listor** – varje rad blir en rad i listan.
+- **Dokument, kalenderhändelser, kort, omröstningar och beslut** – i beskrivningen, eller i beslutets text.
+
+# Bra att veta
+- Texten läses av på din egen enhet. Bilden skickas inte någonstans om du inte väljer att bifoga den.
+- Tryckt text på svenska och engelska fungerar bäst. Handskrift blir sällan rätt.
+- Bilder förminskas innan de skickas, så att de tar mindre av ditt lagringsutrymme.
+- Vem som kan se en bifogad bild följer delningen av det den är bifogad till.
+- Kameran kräver en säker anslutning (https).`,
 
   'help.accessibility.title': 'Tillgänglighet',
   'help.accessibility.intro': 'Samling är byggt för att fungera med tangentbord, skärmläsare, förstorad text och små skärmar – och du kan anpassa det ytterligare.',

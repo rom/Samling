@@ -14,7 +14,7 @@ the integrity of the decision log.
 | Outsider on the network | TLS 1.3 only, HSTS, no unauthenticated API except login |
 | Password guessing / credential stuffing | Argon2id, rate limit per address, account lockout, optional or enforced TOTP MFA |
 | Malicious or curious member | Per-resource sharing checked on every request, existence not revealed, search restricted by the same rules |
-| Cross-site attacks (XSS, CSRF, clickjacking) | Strict CSP without inline script, SameSite=Strict cookie + CSRF header, frame denial, uploads never rendered in the app's origin |
+| Cross-site attacks (XSS, CSRF, clickjacking) | Strict CSP without inline script, SameSite=Strict cookie + CSRF header, frame denial, uploads served as downloads; only verified pictures (JPEG, PNG, GIF, WebP) are shown inline, sandboxed |
 | Malicious upload | Size limit, sanitised names, forced download, sandbox CSP |
 | Stolen disk, database file or backup | Encrypted files, encrypted PII fields, encrypted backups; hashed passwords and session tokens. *Not* covered without disk encryption: message texts and titles in the database (see below) |
 | Curious administrator | No implicit access to private content or direct messages; audit log of administrative actions; anonymous ballots cannot be linked to voters from the database or a backup (see D6 for the limits) |
@@ -223,14 +223,17 @@ because the final chunk must carry the flag. Passphrase protected files
 
 ## Web application hardening
 
-* **CSP**: `default-src 'self'; script-src 'self'; style-src 'self';
-  img-src 'self' data: blob:; connect-src 'self'; object-src 'none';
-  frame-ancestors 'none'; base-uri 'none'; form-action 'self'` — no inline
-  script, no `eval`, no third-party origins. The client loads nothing from
-  other sites.
+* **CSP**: `default-src 'self'; script-src 'self' 'wasm-unsafe-eval';
+  worker-src 'self'; style-src 'self'; img-src 'self' data: blob:;
+  connect-src 'self'; object-src 'none'; frame-ancestors 'none';
+  base-uri 'none'; form-action 'self'` — no inline script, no `eval`, no
+  third-party origins. The client loads nothing from other sites.
+  `'wasm-unsafe-eval'` permits compiling WebAssembly only (not `eval` or
+  inline script); it is needed by the on-device text recognition, whose
+  code is served from Samling itself (`web/static/vendor/ocr`).
 * **Headers**: `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`,
-  `Referrer-Policy: no-referrer`, `Permissions-Policy` (camera, microphone,
-  geolocation, payment, usb off), `Cross-Origin-Opener-Policy` and
+  `Referrer-Policy: no-referrer`, `Permissions-Policy` (camera for
+  Samling itself only; microphone, geolocation, payment, usb off), `Cross-Origin-Opener-Policy` and
   `Cross-Origin-Resource-Policy: same-origin`, `Cache-Control: no-store` on
   the API.
 * **Downloads**: always `Content-Disposition: attachment` with
@@ -239,6 +242,27 @@ because the final chunk must carry the flag. Passphrase protected files
   script in Samling's origin when opened, nor be loaded by a page of the
   site as a script, style sheet or JSON data (the CSP allows `'self'`, so
   this matters).
+* **Pictures shown in the application**: `GET /api/files/{id}/image` is the
+  one place where uploaded content is shown inline. The type of an upload is
+  established from its content when it is stored (not from its name or the
+  type the browser claimed), and only JPEG, PNG, GIF and WebP are served
+  this way — with their real type, `nosniff` and a `sandbox` CSP. SVG and
+  HTML are never served inline. Access follows the message, document,
+  attachment or profile the picture belongs to.
+* **Formatted messages**: bold, italic and underline are plain-text marks
+  that the client turns into elements; message text is always inserted as
+  text, never as HTML. Reactions are limited to a fixed set of emoji.
+* **Camera and text recognition**: the camera is used only after the
+  browser's own permission prompt. Text recognition runs in the browser;
+  the picture is uploaded only if the person chooses to attach it.
+* **Optional profile fields** (address, interests, specialities, about) are
+  encrypted at rest like other personal data, and each is disclosed to other
+  members only when its owner has chosen to share it. Account managers can
+  see them.
+* **Blocking direct messages**: a person can refuse direct messages from
+  another person. The server enforces it for new messages, reactions and new
+  conversations (including group conversations); the blocked person is not
+  told who blocked them beyond the refusal itself.
 * **Request paths in the client**: ids taken from the address bar or from
   server data are only used in API paths made of plain segments; the client
   refuses anything else and ignores routes that are not plain segments. A

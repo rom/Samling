@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bufio"
 	"context"
 	"crypto/sha256"
 	"database/sql"
@@ -55,15 +56,25 @@ func (a *App) hUpload(c *Ctx) error {
 		return errBad("file_required")
 	}
 	name := safeFilename(part.FileName())
-	// The type is derived from the extension, never trusted from the client,
-	// and files are always served as downloads (see hDownload).
+	// The stored type is informational: it comes from the extension, never
+	// from the client, and files are always served as downloads (see
+	// hDownload). Pictures are the exception: they can be shown inline (see
+	// hImage), so a file only counts as a picture when its content really
+	// starts like one, whatever it is called.
 	mt := mime.TypeByExtension(strings.ToLower(filepath.Ext(name)))
 	if mt == "" {
 		mt = "application/octet-stream"
 	}
+	head := bufio.NewReaderSize(part, 512)
+	first, _ := head.Peek(512)
+	if sniffed := http.DetectContentType(first); imageTypes[sniffed] {
+		mt = sniffed
+	} else if strings.HasPrefix(mt, "image/") {
+		mt = "application/octet-stream"
+	}
 	id, key := crypto.NewID(), crypto.NewID()
 	h := sha256.New()
-	cr := &countReader{r: io.TeeReader(part, h)}
+	cr := &countReader{r: io.TeeReader(head, h)}
 	if err := a.Blobs.Put(c.ctx(), key, cr); err != nil {
 		_ = a.Blobs.Delete(context.WithoutCancel(c.ctx()), key)
 		return err
@@ -124,6 +135,30 @@ func (a *App) canReadFile(c *Ctx, fileID, uploader string) (bool, error) {
 	if err := a.DB.Each(c.ctx(), `SELECT DISTINCT doc_id FROM doc_versions WHERE file_id=?`, []any{fileID}, collect("document")); err != nil {
 		return false, err
 	}
+	// A profile photo can be seen by every member.
+	var avatars int
+	if err := a.DB.Row(c.ctx(), `SELECT COUNT(*) FROM users WHERE avatar=? AND deleted_at=0`, "file:"+fileID).Scan(&avatars); err != nil {
+		return false, err
+	}
+	if avatars > 0 {
+		return true, nil
+	}
+	// Attachments follow the thing they are attached to.
+	type att struct{ typ, id string }
+	var atts []att
+	if err := a.DB.Each(c.ctx(), `SELECT res_type, res_id FROM attachments WHERE file_id=?`, []any{fileID}, func(r *sql.Rows) error {
+		var x att
+		err := r.Scan(&x.typ, &x.id)
+		atts = append(atts, x)
+		return err
+	}); err != nil {
+		return false, err
+	}
+	for _, x := range atts {
+		if rt, rid, err := a.attachmentACL(c.ctx(), x.typ, x.id); err == nil {
+			refs = append(refs, Event{rt, rid})
+		}
+	}
 	for _, ref := range refs {
 		if lvl, err := a.level(c.ctx(), c.U, ref.Type, ref.ID); err == nil && lvl >= LevelRead {
 			return true, nil
@@ -149,6 +184,32 @@ func (a *App) hDownload(c *Ctx) error {
 	return a.serveFile(c, key, name, mt)
 }
 
+// hImage shows a picture inline (photos in chat and attachments, profile
+// photos). Only files whose content was recognised as a picture at upload
+// are served this way, with their real type; everything else is refused.
+func (a *App) hImage(c *Ctx) error {
+	id := c.Param("id")
+	var key, mt, uploader string
+	if err := a.DB.Row(c.ctx(), `SELECT blob_key, mime, uploader_id FROM files WHERE id=?`, id).Scan(&key, &mt, &uploader); err != nil {
+		return errNotFound
+	}
+	if ok, err := a.canReadFile(c, id, uploader); err != nil {
+		return err
+	} else if !ok || !imageTypes[mt] {
+		return errNotFound
+	}
+	rc, err := a.Blobs.Get(c.ctx(), key)
+	if err != nil {
+		return err
+	}
+	h := c.W.Header()
+	h.Set("Content-Type", mt)
+	h.Set("Content-Disposition", "inline")
+	h.Set("Content-Security-Policy", "default-src 'none'; sandbox")
+	h.Set("Cache-Control", "private, max-age=86400") // files never change
+	return copyClose(c.W, rc)
+}
+
 func (a *App) serveFile(c *Ctx, key, name, mt string) error {
 	rc, err := a.Blobs.Get(c.ctx(), key)
 	if err != nil {
@@ -172,11 +233,19 @@ func (a *App) serveFile(c *Ctx, key, name, mt string) error {
 // be attached are left alone).
 func (a *App) gcFiles(ctx context.Context) {
 	ctx = context.WithoutCancel(ctx)
+	// Attachments of things that no longer exist go first.
+	for typ, table := range map[string]string{"list": "lists", "event": "events", "card": "cards", "meeting": "meetings", "poll": "polls", "decision": "decisions"} {
+		if err := a.DB.Exec(ctx, `DELETE FROM attachments WHERE res_type=? AND NOT EXISTS (SELECT 1 FROM `+table+` x WHERE x.id=attachments.res_id)`, typ); err != nil {
+			a.Log.Error("attachment gc", "err", err)
+		}
+	}
 	type f struct{ id, key string }
 	var dead []f
 	err := a.DB.Each(ctx, `SELECT id, blob_key FROM files WHERE created_at < ?
 		AND NOT EXISTS (SELECT 1 FROM message_files mf WHERE mf.file_id=files.id)
-		AND NOT EXISTS (SELECT 1 FROM doc_versions dv WHERE dv.file_id=files.id)`, []any{a.unix() - 3600}, func(r *sql.Rows) error {
+		AND NOT EXISTS (SELECT 1 FROM doc_versions dv WHERE dv.file_id=files.id)
+		AND NOT EXISTS (SELECT 1 FROM attachments t WHERE t.file_id=files.id)
+		AND NOT EXISTS (SELECT 1 FROM users u WHERE u.avatar = 'file:' || files.id)`, []any{a.unix() - 3600}, func(r *sql.Rows) error {
 		var x f
 		if err := r.Scan(&x.id, &x.key); err != nil {
 			return err

@@ -68,6 +68,11 @@ type User struct {
 	Passkeys       int            `json:"passkeys"`       // number of registered passkeys
 	RecoveryCodes  int            `json:"recovery_codes"` // unused recovery codes
 	Sessions       int            `json:"sessions"`       // active sessions
+	// Optional profile fields (address, interests, specialities, about) and,
+	// per field, whether other members may see it.
+	Profile       map[string]string `json:"profile"`
+	ProfileShared map[string]bool   `json:"profile_shared"`
+	Avatar        string            `json:"avatar"` // "", "preset:<n>" or "file:<id>"
 
 	passwordHash string
 	totpSecret   string
@@ -109,19 +114,20 @@ type session struct {
 
 const userCols = `id, username, display_name, email_enc, phone_enc, contact_visible, locale, settings, totp_enabled,
  mfa_required, must_change_password, disabled, created_at, last_login_at, password_hash, totp_secret_enc,
- totp_last_step, failed_logins, locked_until, deleted_at`
+ totp_last_step, failed_logins, locked_until, deleted_at, profile_enc, profile_shared, avatar`
 
 type scanner interface{ Scan(dest ...any) error }
 
 func (a *App) scanUser(s scanner) (*User, error) {
 	u := &User{}
-	var emailEnc, phoneEnc, settings, totpEnc string
+	var emailEnc, phoneEnc, settings, totpEnc, profileEnc, profileShared string
 	err := s.Scan(&u.ID, &u.Username, &u.DisplayName, &emailEnc, &phoneEnc, &u.ContactVisible, &u.Locale, &settings,
 		&u.TOTPEnabled, &u.MFARequired, &u.MustChangePW, &u.Disabled, &u.CreatedAt, &u.LastLoginAt, &u.passwordHash,
-		&totpEnc, &u.totpLastStep, &u.failed, &u.lockedUntil, &u.deletedAt)
+		&totpEnc, &u.totpLastStep, &u.failed, &u.lockedUntil, &u.deletedAt, &profileEnc, &profileShared, &u.Avatar)
 	if err != nil {
 		return nil, err
 	}
+	u.Profile, u.ProfileShared = a.decodeProfile(u.ID, profileEnc, profileShared)
 	u.Email, _ = a.Keys.DecryptField(emailEnc, "users.email", u.ID)
 	u.Phone, _ = a.Keys.DecryptField(phoneEnc, "users.phone", u.ID)
 	u.totpSecret, _ = a.Keys.DecryptField(totpEnc, "users.totp", u.ID)
@@ -668,17 +674,32 @@ func (a *App) hMe(c *Ctx) error {
 
 func (a *App) hUpdateMe(c *Ctx) error {
 	var in struct {
-		DisplayName    *string         `json:"display_name"`
-		Email          *string         `json:"email"`
-		Phone          *string         `json:"phone"`
-		ContactVisible *bool           `json:"contact_visible"`
-		Locale         *string         `json:"locale"`
-		Settings       *map[string]any `json:"settings"`
+		DisplayName    *string           `json:"display_name"`
+		Email          *string           `json:"email"`
+		Phone          *string           `json:"phone"`
+		ContactVisible *bool             `json:"contact_visible"`
+		Locale         *string           `json:"locale"`
+		Settings       *map[string]any   `json:"settings"`
+		Profile        map[string]string `json:"profile"`
+		ProfileShared  map[string]bool   `json:"profile_shared"`
+		Avatar         *string           `json:"avatar"`
 	}
 	if err := c.Bind(&in); err != nil {
 		return err
 	}
 	u := c.U
+	if in.Profile != nil {
+		u.Profile = cleanProfile(in.Profile)
+	}
+	if in.ProfileShared != nil {
+		u.ProfileShared = cleanProfileShared(in.ProfileShared)
+	}
+	if in.Avatar != nil {
+		if err := a.checkAvatar(c, *in.Avatar); err != nil {
+			return err
+		}
+		u.Avatar = *in.Avatar
+	}
 	if in.DisplayName != nil {
 		if u.DisplayName = cleanName(*in.DisplayName); u.DisplayName == "" {
 			return errBad("name_required")
@@ -715,11 +736,17 @@ func (a *App) hUpdateMe(c *Ctx) error {
 	if len(settings) > 4096 {
 		return errBad("too_large")
 	}
-	err := a.DB.Exec(c.ctx(), `UPDATE users SET display_name=?, display_key=?, email_enc=?, email_idx=?, phone_enc=?, contact_visible=?, locale=?, settings=? WHERE id=?`,
+	profileEnc, profileShared := a.encodeProfile(u.ID, u.Profile, u.ProfileShared)
+	err := a.DB.Exec(c.ctx(), `UPDATE users SET display_name=?, display_key=?, email_enc=?, email_idx=?, phone_enc=?, contact_visible=?, locale=?, settings=?,
+		profile_enc=?, profile_shared=?, avatar=? WHERE id=?`,
 		u.DisplayName, nameKey(u.DisplayName), a.Keys.EncryptField(u.Email, "users.email", u.ID), a.Keys.BlindIndex(u.Email),
-		a.Keys.EncryptField(u.Phone, "users.phone", u.ID), b2i(u.ContactVisible), u.Locale, string(settings), u.ID)
+		a.Keys.EncryptField(u.Phone, "users.phone", u.ID), b2i(u.ContactVisible), u.Locale, string(settings),
+		profileEnc, profileShared, u.Avatar, u.ID)
 	if err != nil {
 		return err
+	}
+	if in.Avatar != nil {
+		a.gcFiles(c.ctx()) // a replaced photo is no longer referenced
 	}
 	return c.JSON(u)
 }

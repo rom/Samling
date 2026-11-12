@@ -1,11 +1,12 @@
 import { html, useState, useEffect, t, api, act, download, useLoad, useLive, go, can, userName, linkify, fmtDate, fmtDateTime, toDateInput, fromDateInput,
   Icon, Modal, Field, useForm, ShareEditor, ShareButton, Badge, Page, Empty, Loading } from '../lib.js';
+import { Attachments, ScanInto } from '../media.js';
 import { optText } from './polls.js';
 
 const statusBadge = (d) => html`<${Badge} kind=${d.status === 'decided' ? 'ok' : 'danger'}>${t('dec.status_' + d.status)}<//>`;
 
 function NewDecision({ pollId, onClose }) {
-  const [f, , bind, , setF] = useForm({ title: '', body: '', date: toDateInput(Date.now() / 1000) });
+  const [f, set, bind, , setF] = useForm({ title: '', body: '', date: toDateInput(Date.now() / 1000) });
   const [shares, setShares] = useState([{ type: 'all', id: '', level: 1 }]);
   useEffect(() => {
     if (!pollId) return;
@@ -23,6 +24,7 @@ function NewDecision({ pollId, onClose }) {
   return html`<${Modal} title=${t('dec.record')} onClose=${() => onClose(null)} wide><form onSubmit=${submit}>
     <${Field} label=${t('dec.title')}><input ...${bind('title')} required maxlength="200" /><//>
     <${Field} label=${t('dec.text')}><textarea ...${bind('body')} rows="6"></textarea><//>
+    <${ScanInto} value=${f.body} onChange=${(v) => set('body', v)} />
     <${Field} label=${t('dec.date')}><input type="date" ...${bind('date')} required /><//>
     <${Field} group label=${t('dec.audience')} hint=${t('dec.audience_hint')}><${ShareEditor} value=${shares} onChange=${setShares} levels=${false} /><//>
     <div class="buttons"><button type="button" onClick=${() => onClose(null)}>${t('common.cancel')}</button><button class="primary">${t('dec.record')}</button></div>
@@ -30,7 +32,7 @@ function NewDecision({ pollId, onClose }) {
 }
 
 function Revise({ d, onClose }) {
-  const [f, , bind] = useForm({ title: d.title, body: d.body, status: d.status, comment: '' });
+  const [f, set, bind] = useForm({ title: d.title, body: d.body, status: d.status, comment: '' });
   const submit = async (e) => {
     e.preventDefault();
     if (await act(() => api('PATCH', '/decisions/' + d.id, f), t('common.saved'))) onClose(true);
@@ -39,6 +41,7 @@ function Revise({ d, onClose }) {
     <p class="muted">${t('dec.revise_text')}</p>
     <${Field} label=${t('dec.title')}><input ...${bind('title')} required maxlength="200" /><//>
     <${Field} label=${t('dec.text')}><textarea ...${bind('body')} rows="6"></textarea><//>
+    <${ScanInto} value=${f.body} onChange=${(v) => set('body', v)} />
     <${Field} label=${t('dec.status')}><select ...${bind('status')}>${['decided', 'revoked', 'superseded'].map((k) => html`<option value=${k}>${t('dec.status_' + k)}</option>`)}</select><//>
     <${Field} label=${t('dec.reason')}><input ...${bind('comment')} required maxlength="1000" /><//>
     <div class="buttons"><button type="button" onClick=${() => onClose(false)}>${t('common.cancel')}</button><button class="primary">${t('common.save')}</button></div>
@@ -57,7 +60,8 @@ function Detail({ id }) {
       <div class="card"><p class="row">${statusBadge(d)}<span><${Icon} name="calendar" /> ${fmtDate(d.decided_at)}</span>
         ${d.meeting_id && html`<a href=${'#/meetings/' + d.meeting_id}><${Icon} name="meeting" /> ${t('dec.from_meeting')}</a>`}
         ${d.poll_id && html`<a href=${'#/polls/' + d.poll_id}><${Icon} name="poll" /> ${t('dec.from_poll_link')}</a>`}</p>
-        <div class="pre">${linkify(d.body || '')}</div></div>
+        <div class="pre">${linkify(d.body || '')}</div>
+        <${Attachments} type="decision" id=${id} canEdit=${d.level >= 3} /></div>
       <div class="card"><h2>${t('dec.history')}</h2><div class="timeline" style=${{ marginTop: '1rem' }}>
         ${(d.revisions || []).map((r, i) => html`<div key=${i}><b>${fmtDateTime(r.created_at)}</b> · ${userName(r.user_id)} · ${statusBadge(r)}
           <div>${i === d.revisions.length - 1 ? t('dec.created') : r.comment}</div>

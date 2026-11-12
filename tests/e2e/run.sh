@@ -51,4 +51,4 @@ for _ in $(seq 1 50); do
 	sleep 0.1
 done
 
-E2E_URL="http://127.0.0.1:$port" E2E_ADMIN_PASSWORD="$password" E2E_OUT="$work/out" node "$root/tests/e2e/smoke.js"
+E2E_URL="http://localhost:$port" E2E_ADMIN_PASSWORD="$password" E2E_OUT="$work/out" node "$root/tests/e2e/smoke.js"

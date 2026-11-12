@@ -7,12 +7,17 @@
 // the fresh "admin" account), E2E_OUT (directory for screenshots/downloads).
 const { chromium } = require('playwright');
 const fs = require('fs');
-const BASE = process.env.E2E_URL || 'http://127.0.0.1:8090';
+const BASE = process.env.E2E_URL || 'http://localhost:8090'; // a host name: passkeys do not work on IP addresses
 const temp = process.env.E2E_ADMIN_PASSWORD;
 const OUT = process.env.E2E_OUT || __dirname + '/out';
 fs.mkdirSync(OUT, { recursive: true });
 const PW = 'correct horse battery staple';
 const errors = [];
+// The welcome tour opens at a person's first sign-in; tests skip it.
+const dismissTour = async (p) => {
+  const skip = p.getByRole('dialog').getByRole('button', { name: /^(Skip|Hoppa över)/ });
+  try { await skip.waitFor({ timeout: 1500 }); await skip.click(); } catch { /* no tour shown */ }
+};
 const step = async (name, fn) => { try { await fn(); console.log('ok   ' + name); } catch (e) { console.log('FAIL ' + name + ': ' + e.message.split('\n').slice(0,6).join(' | ')); errors.push(name); } };
 
 (async () => {
@@ -30,7 +35,7 @@ const step = async (name, fn) => { try { await fn(); console.log('ok   ' + name)
     await page.goto(BASE);
     await page.getByLabel('Användarnamn').fill('admin');
     await page.getByLabel('Lösenord').fill(temp);
-    await page.getByRole('button', { name: 'Logga in' }).click();
+    await page.getByRole('button', { name: 'Logga in', exact: true }).click();
     await page.getByRole('heading', { name: 'Välj ett nytt lösenord' }).waitFor();
     await shot('01-pending');
     await page.getByLabel('Nuvarande lösenord').fill(temp);
@@ -302,8 +307,6 @@ const step = async (name, fn) => { try { await fn(); console.log('ok   ' + name)
     await page.getByRole('heading', { name: 'Appearance' }).waitFor();
     await page.getByRole('button', { name: 'Dark' }).click();
     await page.getByLabel('Normal').check();
-    await page.getByRole('button', { name: 'Set up two-step verification' }).click();
-    await page.locator('.qr img').waitFor();
     await shot('20-settings-dark-en');
     await page.reload();
     await page.getByRole('heading', { name: 'Appearance' }).waitFor(); // language + theme persisted
@@ -334,7 +337,7 @@ const step = async (name, fn) => { try { await fn(); console.log('ok   ' + name)
     await p2.goto(BASE);
     await p2.getByLabel('Användarnamn').fill('bertil');
     await p2.getByLabel('Lösenord').fill('temporary-password-1');
-    await p2.getByRole('button', { name: 'Logga in' }).click();
+    await p2.getByRole('button', { name: 'Logga in', exact: true }).click();
     await p2.getByLabel('Nuvarande lösenord').fill('temporary-password-1');
     await p2.getByLabel('Nytt lösenord', { exact: true }).fill(PW);
     await p2.getByLabel('Upprepa nytt lösenord').fill(PW);
@@ -370,9 +373,119 @@ const step = async (name, fn) => { try { await fn(); console.log('ok   ' + name)
     await ctx2.close();
   });
 
+  await step('crafted links cannot steer requests to another endpoint', async () => {
+    const sent = [];
+    const watch = (r) => { if (r.url().includes('/api/')) sent.push(new URL(r.url()).pathname); };
+    page.on('request', watch);
+    for (const hash of ['#/lists/..%2Fadmin%2Fusers', '#/lists/..%2F..%2Fapi%2Fme', '#/documents/%2e%2e%2ffiles%2fabc', '#/boards/a%2Fb', '#/polls/%ZZ']) {
+      await page.goto(BASE + '/' + hash);
+      await page.waitForTimeout(300);
+    }
+    page.off('request', watch);
+    const bad = sent.filter((p) => !/^\/api\/(channels|calendar|polls|decisions|events|me|users|groups|roles|lists|documents|boards)$/.test(p));
+    if (bad.length) throw new Error('unexpected requests: ' + bad.join(', '));
+    // The request helper itself refuses paths that are not plain segments.
+    const res = await page.evaluate(async () => {
+      const { api } = await import('/js/lib.js');
+      const out = [];
+      for (const p of ['/lists/../admin/users', '/lists/a%2Fb', '/lists//x', '/files/x/../../me']) {
+        try { await api('GET', p); out.push('SENT ' + p); } catch (e) { out.push(e.code); }
+      }
+      return out;
+    });
+    if (res.some((x) => x !== 'bad_request_path')) throw new Error('path guard: ' + res.join(', '));
+  });
+
+  await step('two-step verification with recovery codes; passkey registration and sign-in', async () => {
+    const totp = (secret) => {
+      const crypto = require('crypto');
+      const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+      let bits = '';
+      for (const ch of secret) bits += alphabet.indexOf(ch).toString(2).padStart(5, '0');
+      const key = Buffer.from(bits.match(/.{8}/g).map((b) => parseInt(b, 2)));
+      const msg = Buffer.alloc(8);
+      msg.writeBigUInt64BE(BigInt(Math.floor(Date.now() / 30000)));
+      const h = crypto.createHmac('sha1', key).update(msg).digest();
+      const o = h[h.length - 1] & 15;
+      return String((h.readUInt32BE(o) & 0x7fffffff) % 1000000).padStart(6, '0');
+    };
+    const ctx3 = await browser.newContext({ viewport: { width: 1280, height: 800 }, locale: 'en-GB' });
+    const p3 = await ctx3.newPage();
+    p3.on('pageerror', (e) => { console.log('  pageerror(p3):', e.message.slice(0, 300)); errors.push('pageerror'); });
+    p3.on('dialog', (d) => d.accept(PW));
+    p3.setDefaultTimeout(6000);
+    // A virtual authenticator with user verification stands in for a phone or security key.
+    const cdp = await ctx3.newCDPSession(p3);
+    await cdp.send('WebAuthn.enable');
+    await cdp.send('WebAuthn.addVirtualAuthenticator', { options: { protocol: 'ctap2', transport: 'internal', hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true } });
+    const signIn = async (code) => {
+      await p3.goto(BASE);
+      await p3.getByLabel('Username').fill('cecilia');
+      await p3.getByLabel('Password').fill(code === undefined ? 'temporary-password-1' : PW);
+      await p3.getByRole('button', { name: 'Sign in', exact: true }).click();
+      if (code !== undefined && code !== null) {
+        await p3.getByLabel('Verification code').fill(code);
+        await p3.getByRole('button', { name: 'Sign in', exact: true }).click();
+      }
+    };
+    await p3.goto(BASE);
+    await p3.getByRole('combobox').selectOption('en');
+    await signIn();
+    await p3.getByLabel('Current password').fill('temporary-password-1');
+    await p3.getByLabel('New password', { exact: true }).fill(PW);
+    await p3.getByLabel('Repeat new password').fill(PW);
+    await p3.getByRole('button', { name: 'Change password' }).click();
+    await p3.locator('nav.nav').waitFor();
+    await dismissTour(p3);
+    await p3.goto(BASE + '/#/settings');
+    await p3.getByLabel('English').check();
+    // Authenticator app + recovery codes
+    const mfa = p3.locator('form', { has: p3.getByRole('button', { name: 'Set up two-step verification' }) });
+    await mfa.getByLabel('Current password').fill(PW);
+    await mfa.getByRole('button').click();
+    const secret = (await p3.locator('code.secret').innerText()).trim();
+    await p3.getByLabel('Verification code').fill(totp(secret));
+    await p3.getByRole('button', { name: 'Turn on' }).click();
+    await p3.locator('.codes li').nth(9).waitFor();
+    const codes = await p3.locator('.codes li').allInnerTexts();
+    await p3.screenshot({ path: OUT + '/shot-50-recovery-codes.png' });
+    await p3.getByRole('button', { name: 'I have saved them' }).click();
+    await p3.getByText('Unused recovery codes: 10.').waitFor();
+    // Passkey registration
+    const pk = p3.locator('form', { has: p3.getByRole('button', { name: 'Add a passkey' }) });
+    await pk.getByLabel('Name, e.g. My phone').fill('Test key');
+    await pk.getByLabel('Current password').fill(PW);
+    await pk.getByRole('button', { name: 'Add a passkey' }).click();
+    await p3.getByText('Test key').waitFor();
+    await p3.screenshot({ path: OUT + '/shot-51-passkey.png' });
+    // Sign in again with password + a recovery code (single use)
+    await p3.getByRole('button', { name: 'Sign out' }).click();
+    await signIn(codes[0]);
+    await p3.locator('nav.nav').waitFor();
+    await p3.getByRole('button', { name: 'Sign out' }).click();
+    await signIn(codes[0]);
+    await p3.getByText('Wrong username, password or code.').waitFor();
+    // Sign in with the passkey: no user name, no password
+    await p3.goto(BASE);
+    await p3.getByRole('button', { name: 'Sign in with a passkey' }).click();
+    await p3.locator('nav.nav').waitFor();
+    await p3.goto(BASE + '/#/settings');
+    await p3.getByText('last used').waitFor();
+    await p3.getByText('Unused recovery codes: 9.').waitFor();
+    // The administrator signs the account out everywhere.
+    await page.goto(BASE + '/#/admin');
+    await page.locator('tr', { hasText: '@cecilia' }).getByRole('button').click();
+    await page.getByRole('button', { name: /Sign out everywhere \(\d active\)/ }).click();
+    await page.getByText('The person was signed out on all devices').waitFor();
+    await p3.reload();
+    await p3.getByRole('button', { name: 'Sign in', exact: true }).waitFor();
+    await ctx3.close();
+    errors.splice(0, errors.length, ...errors.filter((x) => x !== 'console')); // expected 401s above
+  });
+
   await step('logout', async () => {
     await page.getByRole('button', { name: 'Sign out' }).click();
-    await page.getByRole('button', { name: 'Sign in' }).waitFor();
+    await page.getByRole('button', { name: 'Sign in', exact: true }).waitFor();
     await shot('40-login');
   });
 

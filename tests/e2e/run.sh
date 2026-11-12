@@ -5,24 +5,33 @@
 # Requires Node.js with the "playwright" package and a Chromium it can launch
 # (npm install playwright && npx playwright install chromium).
 #
-# Usage: tests/e2e/run.sh [--port N] [--keep]
-#   --port N   port for the test server (default 8097)
-#   --keep     keep the work directory (screenshots, server log) afterwards
+# Usage: tests/e2e/run.sh [--port N] [--keep] [--work DIR]
+#   --port N    port for the test server (default 8097)
+#   --keep      keep the work directory (screenshots, server log) afterwards
+#   --work DIR  use DIR (must be empty or absent) as work directory and keep it
 set -euo pipefail
 
 port=8097
 keep=0
+work=""
 while [ $# -gt 0 ]; do
 	case "$1" in
 	--port) port="$2"; shift 2 ;;
 	--keep) keep=1; shift ;;
-	-h | --help) sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+	--work) work="$2"; keep=1; shift 2 ;;
+	-h | --help) sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
 	*) echo "unknown argument: $1" >&2; exit 2 ;;
 	esac
 done
 
 root="$(cd "$(dirname "$0")/../.." && pwd)"
-work="$(mktemp -d)"
+if [ -n "$work" ]; then
+	mkdir -p "$work"
+	[ -z "$(ls -A "$work")" ] || { echo "work directory $work is not empty" >&2; exit 2; }
+	work="$(cd "$work" && pwd)"
+else
+	work="$(mktemp -d)"
+fi
 server_pid=""
 cleanup() {
 	[ -n "$server_pid" ] && kill "$server_pid" 2>/dev/null || true

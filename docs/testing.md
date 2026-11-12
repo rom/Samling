@@ -20,6 +20,17 @@ make vet
 
 runs `go vet` and a `gofmt` check.
 
+## Continuous integration
+
+`.github/workflows/ci.yml` runs on every pull request and on pushes to the
+default branch, in three jobs:
+
+| Job | What it runs |
+|-----|--------------|
+| Build, vet and test (SQLite) | `go mod tidy` check, `make vet`, `make test` (Go tests + translation check), `make build`, `check-config` on the example configuration, `bash -n` on the scripts |
+| API tests (PostgreSQL) | `make test-postgres` against a PostgreSQL 16 service container |
+| Browser smoke test | `tests/e2e/run.sh` with Playwright/Chromium; screenshots and the server log are uploaded as an artifact when it fails |
+
 ## How the API tests work
 
 `internal/app/app_test.go` starts the real HTTP handler (`httptest`) with a

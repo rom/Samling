@@ -1,0 +1,95 @@
+name: CI
+
+on:
+  push:
+    branches: [rom]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Build, vet and test (SQLite)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: go.mod and go.sum are tidy
+        run: go mod tidy && git diff --exit-code -- go.mod go.sum
+      - name: Vet and formatting
+        run: make vet
+      - name: Tests and translation check
+        run: make test
+      - name: Static build
+        run: make build
+      - name: Example configuration is valid
+        run: ./bin/samling check-config --config samling.example.yaml
+      - name: Shell scripts parse
+        run: |
+          for f in scripts/*.sh tests/e2e/run.sh; do bash -n "$f"; done
+
+  postgres:
+    name: API tests (PostgreSQL)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: API suite on PostgreSQL
+        run: make test-postgres
+        env:
+          SAMLING_TEST_PG_DSN: postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable
+
+  e2e:
+    name: Browser smoke test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install Playwright and Chromium
+        run: |
+          npm install --no-save playwright@1.63.0
+          npx playwright install --with-deps chromium
+      - name: Run the smoke test
+        run: tests/e2e/run.sh --work "$RUNNER_TEMP/e2e"
+      - name: Upload screenshots and server log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-output
+          path: |
+            ${{ runner.temp }}/e2e/out/*.png
+            ${{ runner.temp }}/e2e/server.log
+          if-no-files-found: ignore
+          retention-days: 7

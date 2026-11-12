@@ -24,22 +24,120 @@ type Event struct {
 	ID   string `json:"id"`
 }
 
-type hub struct {
-	mu      sync.Mutex
-	clients map[chan Event]struct{}
+// Limits on open event streams. The per-user limit keeps one account from
+// occupying all slots; when it is exceeded the account's oldest stream is
+// closed (its tab reconnects when it becomes active again).
+const (
+	maxStreams        = 2000
+	maxStreamsPerUser = 6
+)
+
+type stream struct {
+	ch   chan Event
+	uid  string
+	sess string // session id hash
+	seq  uint64
+	quit chan struct{}
+	once sync.Once
 }
 
-func newHub() *hub { return &hub{clients: map[chan Event]struct{}{}} }
+func (s *stream) kick() { s.once.Do(func() { close(s.quit) }) }
+
+type hub struct {
+	mu      sync.Mutex
+	clients map[*stream]struct{}
+	seq     uint64
+}
+
+func newHub() *hub { return &hub{clients: map[*stream]struct{}{}} }
 
 func (h *hub) publish(e Event) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	for ch := range h.clients {
+	for s := range h.clients {
 		select {
-		case ch <- e:
+		case s.ch <- e:
 		default: // slow client: drop, it will catch up on the next event
 		}
 	}
+}
+
+// add registers a stream; ok is false when the server-wide limit is reached.
+func (h *hub) add(uid, sess string) (st *stream, ok bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	var own []*stream
+	for s := range h.clients {
+		if s.uid == uid {
+			own = append(own, s)
+		}
+	}
+	for len(own) >= maxStreamsPerUser {
+		oldest := 0
+		for i, s := range own {
+			if s.seq < own[oldest].seq {
+				oldest = i
+			}
+		}
+		own[oldest].kick()
+		delete(h.clients, own[oldest])
+		own = append(own[:oldest], own[oldest+1:]...)
+	}
+	if len(h.clients) >= maxStreams {
+		return nil, false
+	}
+	h.seq++
+	st = &stream{ch: make(chan Event, 32), uid: uid, sess: sess, seq: h.seq, quit: make(chan struct{})}
+	h.clients[st] = struct{}{}
+	return st, true
+}
+
+func (h *hub) remove(st *stream) {
+	h.mu.Lock()
+	delete(h.clients, st)
+	h.mu.Unlock()
+}
+
+// kickUser closes the streams of an account, except those of one session.
+func (h *hub) kickUser(uid, keepSess string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for s := range h.clients {
+		if s.uid == uid && s.sess != keepSess {
+			s.kick()
+			delete(h.clients, s)
+		}
+	}
+}
+
+// kickSession closes the streams that belong to one session.
+func (h *hub) kickSession(sess string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for s := range h.clients {
+		if s.sess == sess {
+			s.kick()
+			delete(h.clients, s)
+		}
+	}
+}
+
+// streamValid re-checks, while a stream is open, that its session still
+// exists and its account is still active, and refreshes the account's roles.
+func (a *App) streamValid(c *Ctx) bool {
+	var expires, lastSeen int64
+	if err := a.DB.Row(c.ctx(), `SELECT expires_at, last_seen FROM sessions WHERE id_hash=?`, c.sess.idHash).Scan(&expires, &lastSeen); err != nil {
+		return false
+	}
+	if !a.sessionAlive(expires, lastSeen) {
+		return false
+	}
+	u, err := a.userByID(c.ctx(), c.U.ID)
+	if err != nil || u.Disabled || u.deletedAt != 0 {
+		return false
+	}
+	c.U = u
+	return true
 }
 
 func (a *App) hEvents(c *Ctx) error {
@@ -47,32 +145,29 @@ func (a *App) hEvents(c *Ctx) error {
 	if !ok {
 		return errBad("streaming_unsupported")
 	}
-	ch := make(chan Event, 32)
-	a.hub.mu.Lock()
-	if len(a.hub.clients) > 2000 {
-		a.hub.mu.Unlock()
+	st, ok := a.hub.add(c.U.ID, c.sess.idHash)
+	if !ok {
 		return &apiError{http.StatusServiceUnavailable, "busy"}
 	}
-	a.hub.clients[ch] = struct{}{}
-	a.hub.mu.Unlock()
-	defer func() {
-		a.hub.mu.Lock()
-		delete(a.hub.clients, ch)
-		a.hub.mu.Unlock()
-	}()
+	defer a.hub.remove(st)
 	c.W.Header().Set("Content-Type", "text/event-stream")
 	c.W.Header().Set("X-Accel-Buffering", "no")
 	fmt.Fprint(c.W, ": connected\n\n")
 	fl.Flush()
-	ping := time.NewTicker(25 * time.Second)
+	ping := time.NewTicker(a.streamPing)
 	defer ping.Stop()
 	for {
 		select {
 		case <-c.ctx().Done():
 			return nil
+		case <-st.quit: // signed out, disabled, deleted or replaced by a newer stream
+			return nil
 		case <-ping.C:
+			if !a.streamValid(c) {
+				return nil
+			}
 			fmt.Fprint(c.W, ": ping\n\n")
-		case e := <-ch:
+		case e := <-st.ch:
 			if lvl, err := a.level(c.ctx(), c.U, e.Type, e.ID); err != nil || lvl < LevelRead {
 				continue
 			}

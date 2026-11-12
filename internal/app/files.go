@@ -35,6 +35,16 @@ func safeFilename(name string) string {
 
 func (a *App) hUpload(c *Ctx) error {
 	limit := a.Cfg.Storage.MaxUploadMB << 20
+	// Storage quota: the files an account has uploaded and that are still
+	// kept. Checked before reading the body and again with the real size.
+	var used int64
+	if err := a.DB.Row(c.ctx(), `SELECT COALESCE(SUM(size),0) FROM files WHERE uploader_id=?`, c.U.ID).Scan(&used); err != nil {
+		return err
+	}
+	quota := a.Cfg.Storage.UserQuotaMB << 20
+	if quota > 0 && used >= quota {
+		return &apiError{http.StatusRequestEntityTooLarge, "quota_exceeded"}
+	}
 	c.R.Body = http.MaxBytesReader(c.W, c.R.Body, limit+1<<20)
 	mr, err := c.R.MultipartReader()
 	if err != nil {
@@ -65,6 +75,10 @@ func (a *App) hUpload(c *Ctx) error {
 	if cr.n == 0 {
 		_ = a.Blobs.Delete(c.ctx(), key)
 		return errBad("empty_file")
+	}
+	if quota > 0 && used+cr.n > quota {
+		_ = a.Blobs.Delete(c.ctx(), key)
+		return &apiError{http.StatusRequestEntityTooLarge, "quota_exceeded"}
 	}
 	err = a.DB.Exec(c.ctx(), `INSERT INTO files (id,blob_key,name,mime,size,sha256,uploader_id,created_at) VALUES (?,?,?,?,?,?,?,?)`,
 		id, key, name, mt, cr.n, hex.EncodeToString(h.Sum(nil)), c.U.ID, a.unix())
@@ -141,10 +155,14 @@ func (a *App) serveFile(c *Ctx, key, name, mt string) error {
 		return err
 	}
 	h := c.W.Header()
-	// Always "attachment" plus a sandboxing CSP: uploaded HTML/SVG can never
-	// run script in the application's origin.
+	// Uploads are always sent as an opaque download: "attachment", a generic
+	// content type and a sandboxing CSP. The stored type (from the file
+	// extension) is only informational. A generic type means an uploaded
+	// file can never be loaded by a page of this site as a script, a style
+	// sheet or JSON data, whatever its name.
+	_ = mt
 	h.Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": name}))
-	h.Set("Content-Type", mt)
+	h.Set("Content-Type", "application/octet-stream")
 	h.Set("Content-Security-Policy", "default-src 'none'; sandbox")
 	return copyClose(c.W, rc)
 }
@@ -272,6 +290,9 @@ func (a *App) hCreateDocument(c *Ctx) error {
 	}
 	shares, err := a.createShares(c, in.Shares)
 	if err != nil {
+		return err
+	}
+	if err := limitCount(c.ctx(), a.DB, maxPerOwner, `SELECT COUNT(*) FROM documents WHERE owner_id=?`, c.U.ID); err != nil {
 		return err
 	}
 	id, now := crypto.NewID(), a.unix()

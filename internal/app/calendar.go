@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
@@ -53,8 +54,8 @@ func (a *App) events(ctx context.Context, u *User, from, to int64) ([]CalEvent, 
 	// All-day events end at the start of their last day: add a day of slack.
 	err := a.DB.Each(ctx, `SELECT e.id, e.owner_id, e.title, e.description, e.location, e.url, e.starts_at, e.ends_at, e.all_day, e.meeting_id, e.uid, e.updated_at,
 		(SELECT COUNT(*) FROM acl a WHERE a.res_type='event' AND a.res_id=e.id)
-		FROM events e WHERE e.starts_at <= ? AND e.ends_at + 86400 >= ? AND `+vis+` ORDER BY e.starts_at, e.id LIMIT 5000`,
-		append([]any{to, from}, args...), func(r *sql.Rows) error {
+		FROM events e WHERE e.starts_at <= ? AND e.ends_at >= ? AND `+vis+` ORDER BY e.starts_at, e.id LIMIT 5000`,
+		append([]any{to, from - 86400}, args...), func(r *sql.Rows) error {
 			var e CalEvent
 			var shares int
 			if err := r.Scan(&e.ID, &e.OwnerID, &e.Title, &e.Description, &e.Location, &e.URL, &e.StartsAt, &e.EndsAt, &e.AllDay, &e.MeetingID, &e.UID, &e.UpdatedAt, &shares); err != nil {
@@ -67,8 +68,16 @@ func (a *App) events(ctx context.Context, u *User, from, to int64) ([]CalEvent, 
 	return out, err
 }
 
+// window reads the from/to query parameters, clamped to valid times.
+func window(c *Ctx) (from, to int64) {
+	from = min(max(c.QueryInt("from", 0), 0), maxTime)
+	to = min(max(c.QueryInt("to", maxTime), 0), maxTime)
+	return from, to
+}
+
 func (a *App) hCalendar(c *Ctx) error {
-	out, err := a.events(c.ctx(), c.U, c.QueryInt("from", 0), c.QueryInt("to", 1<<40))
+	from, to := window(c)
+	out, err := a.events(c.ctx(), c.U, from, to)
 	if err != nil {
 		return err
 	}
@@ -94,7 +103,7 @@ func (in *eventIn) check() (err error) {
 	if in.URL, err = cleanURL(in.URL); err != nil {
 		return err
 	}
-	if in.StartsAt <= 0 || in.EndsAt < in.StartsAt {
+	if in.StartsAt <= 0 || in.EndsAt < in.StartsAt || !validTime(in.EndsAt) {
 		return errBad("invalid_time")
 	}
 	return nil
@@ -110,6 +119,9 @@ func (a *App) hCreateEvent(c *Ctx) error {
 	}
 	shares, err := a.createShares(c, in.Shares)
 	if err != nil {
+		return err
+	}
+	if err := limitCount(c.ctx(), a.DB, maxEventsOwner, `SELECT COUNT(*) FROM events WHERE owner_id=?`, c.U.ID); err != nil {
 		return err
 	}
 	id, now := crypto.NewID(), a.unix()
@@ -198,7 +210,7 @@ func writeICS(w io.Writer, org string, events []CalEvent) {
 	icsLine(w, "X-WR-CALNAME", icsEsc.Replace(org))
 	for _, e := range events {
 		icsLine(w, "BEGIN", "VEVENT")
-		icsLine(w, "UID", e.UID)
+		icsLine(w, "UID", safeUID(e.UID, e.ID))
 		icsLine(w, "DTSTAMP", time.Unix(e.UpdatedAt, 0).UTC().Format(stamp))
 		if e.AllDay {
 			icsLine(w, "DTSTART;VALUE=DATE", time.Unix(e.StartsAt, 0).UTC().Format("20060102"))
@@ -222,8 +234,21 @@ func writeICS(w io.Writer, org string, events []CalEvent) {
 	icsLine(w, "END", "VCALENDAR")
 }
 
+// uidRe is what an event identifier may look like in an export. Anything
+// else (in particular characters that could start a new line or property)
+// is replaced by the event's own id.
+var uidRe = regexp.MustCompile(`^[A-Za-z0-9@._:+/=-]{1,200}$`)
+
+func safeUID(uid, id string) string {
+	if uidRe.MatchString(uid) {
+		return uid
+	}
+	return id + "@samling"
+}
+
 func (a *App) hExportICS(c *Ctx) error {
-	evs, err := a.events(c.ctx(), c.U, c.QueryInt("from", 0), c.QueryInt("to", 1<<40))
+	from, to := window(c)
+	evs, err := a.events(c.ctx(), c.U, from, to)
 	if err != nil {
 		return err
 	}
@@ -286,17 +311,39 @@ func parseICSTime(params, value string) (t time.Time, allDay bool, err error) {
 // ParseICS extracts the VEVENTs of an iCalendar stream. Recurrence rules are
 // not expanded: a recurring event is imported as its first occurrence.
 func ParseICS(r io.Reader) ([]CalEvent, error) {
+	// Unfold continuation lines. Each logical line is built in one buffer
+	// (appending strings would copy the whole line again for every
+	// continuation) and both the length of a line and the number of lines
+	// are limited.
+	const maxLine, maxLines = 64 * 1024, 200000
 	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 64*1024), 1<<20)
 	var lines []string
-	for sc.Scan() {
-		l := strings.TrimRight(sc.Text(), "\r")
-		if (strings.HasPrefix(l, " ") || strings.HasPrefix(l, "\t")) && len(lines) > 0 {
-			lines[len(lines)-1] += l[1:] // unfold
-		} else {
-			lines = append(lines, l)
+	var cur0 strings.Builder
+	started := false
+	flush := func() {
+		if started {
+			lines = append(lines, cur0.String())
+			cur0.Reset()
 		}
 	}
+	for sc.Scan() {
+		l := strings.TrimRight(sc.Text(), "\r")
+		if (strings.HasPrefix(l, " ") || strings.HasPrefix(l, "\t")) && started {
+			if cur0.Len()+len(l) > maxLine {
+				return nil, errBad("invalid_ics")
+			}
+			cur0.WriteString(l[1:])
+			continue
+		}
+		flush()
+		if len(lines) >= maxLines || len(l) > maxLine {
+			return nil, errBad("invalid_ics")
+		}
+		started = true
+		cur0.WriteString(l)
+	}
+	flush()
 	if err := sc.Err(); err != nil {
 		return nil, err
 	}
@@ -319,7 +366,7 @@ func ParseICS(r io.Reader) ([]CalEvent, error) {
 		case name == "END" && cur != nil && depth > 0:
 			depth--
 		case name == "END" && strings.EqualFold(value, "VEVENT") && cur != nil:
-			if cur.StartsAt > 0 && cur.Title != "" {
+			if cur.StartsAt > 0 && cur.Title != "" && validTime(cur.StartsAt) && validTime(cur.EndsAt) {
 				if !hasEnd {
 					cur.EndsAt = cur.StartsAt
 					if !cur.AllDay {
@@ -342,7 +389,9 @@ func ParseICS(r io.Reader) ([]CalEvent, error) {
 		case name == "URL":
 			cur.URL, _ = cleanURL(value)
 		case name == "UID":
-			cur.UID = clean(value, 300)
+			if cur.UID = clean(value, 200); !uidRe.MatchString(cur.UID) {
+				cur.UID = "" // replaced by a generated identifier on import
+			}
 		case name == "DTSTART":
 			if t, allDay, err := parseICSTime(params, value); err == nil {
 				cur.StartsAt, cur.AllDay = t.Unix(), allDay
@@ -368,6 +417,13 @@ func (a *App) hImportICS(c *Ctx) error {
 	evs, err := ParseICS(http.MaxBytesReader(c.W, c.R.Body, 5<<20))
 	if err != nil {
 		return errBad("invalid_ics")
+	}
+	var have int
+	if err := a.DB.Row(c.ctx(), `SELECT COUNT(*) FROM events WHERE owner_id=?`, c.U.ID).Scan(&have); err != nil {
+		return err
+	}
+	if have+len(evs) > maxEventsOwner {
+		return &apiError{http.StatusConflict, "limit_reached"}
 	}
 	now := a.unix()
 	err = a.DB.InTx(c.ctx(), func(tx *db.Tx) error {

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/rand"
 	"io"
+	"strings"
 	"testing"
 	"time"
 )
@@ -119,18 +120,21 @@ func TestFieldEncryption(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	enc := k.EncryptField("anna@example.org", "users.email")
+	enc := k.EncryptField("anna@example.org", "users.email", "user-1")
 	if enc == "" || bytes.Contains([]byte(enc), []byte("anna")) {
 		t.Fatal("not encrypted")
 	}
-	if enc == k.EncryptField("anna@example.org", "users.email") {
+	if enc == k.EncryptField("anna@example.org", "users.email", "user-1") {
 		t.Fatal("encryption must be randomised")
 	}
-	if got, err := k.DecryptField(enc, "users.email"); err != nil || got != "anna@example.org" {
+	if got, err := k.DecryptField(enc, "users.email", "user-1"); err != nil || got != "anna@example.org" {
 		t.Fatalf("decrypt: %q %v", got, err)
 	}
-	if _, err := k.DecryptField(enc, "users.phone"); err == nil {
-		t.Fatal("ciphertext accepted in another context")
+	if _, err := k.DecryptField(enc, "users.phone", "user-1"); err == nil {
+		t.Fatal("ciphertext accepted in another column")
+	}
+	if _, err := k.DecryptField(enc, "users.email", "user-2"); err == nil {
+		t.Fatal("ciphertext accepted in another row")
 	}
 	if k.BlindIndex("Anna@Example.org ") != k.BlindIndex("anna@example.org") {
 		t.Fatal("blind index must normalise")
@@ -151,6 +155,32 @@ func TestPassword(t *testing.T) {
 	}
 	if h == HashPassword("a long passphrase") {
 		t.Fatal("hash must be salted")
+	}
+}
+
+func TestBlobKeysAndRecoveryCodes(t *testing.T) {
+	k, _ := NewKeys(GenerateKey())
+	a, b := k.BlobKey("aaaa"), k.BlobKey("bbbb")
+	if len(a) != 32 || bytes.Equal(a, b) || bytes.Equal(a, k.Blob) {
+		t.Fatal("every file must get its own key")
+	}
+	if !bytes.Equal(a, k.BlobKey("aaaa")) {
+		t.Fatal("file keys must be reproducible")
+	}
+	c1, c2 := NewRecoveryCode(), NewRecoveryCode()
+	if len(c1) != 19 || c1 == c2 {
+		t.Fatalf("recovery codes: %q %q", c1, c2)
+	}
+	if NormalizeRecoveryCode(" "+strings.ToUpper(c1)+" ") != strings.ReplaceAll(c1, "-", "") {
+		t.Fatal("normalisation")
+	}
+}
+
+func TestStreamRejectsTrailingData(t *testing.T) {
+	key := GenerateKey()
+	ct := append(encrypt(t, key, []byte("hello")), []byte("extra")...)
+	if _, err := decryptAll(key, ct); err == nil {
+		t.Fatal("data after the final chunk must be rejected")
 	}
 }
 

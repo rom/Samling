@@ -92,6 +92,9 @@ func (a *App) hCreateList(c *Ctx) error {
 	if err != nil {
 		return err
 	}
+	if err := limitCount(c.ctx(), a.DB, maxPerOwner, `SELECT COUNT(*) FROM lists WHERE owner_id=?`, c.U.ID); err != nil {
+		return err
+	}
 	id, now := crypto.NewID(), a.unix()
 	err = a.DB.InTx(c.ctx(), func(tx *db.Tx) error {
 		if err := tx.Exec(c.ctx(), `INSERT INTO lists (id,owner_id,title,kind,created_at,updated_at) VALUES (?,?,?,?,?,?)`, id, c.U.ID, in.Title, in.Kind, now, now); err != nil {
@@ -196,6 +199,12 @@ func (a *App) hAddItem(c *Ctx) error {
 	if in.DueAt != nil {
 		due = *in.DueAt
 	}
+	if !validTime(due) {
+		return errBad("invalid_time")
+	}
+	if err := limitCount(c.ctx(), a.DB, maxItemsPerList, `SELECT COUNT(*) FROM list_items WHERE list_id=?`, id); err != nil {
+		return err
+	}
 	iid, now := crypto.NewID(), a.unix()
 	err := a.DB.InTx(c.ctx(), func(tx *db.Tx) error {
 		var pos int
@@ -246,6 +255,9 @@ func (a *App) hUpdateItem(c *Ctx) error {
 			}
 		}
 		if in.DueAt != nil {
+			if !validTime(*in.DueAt) {
+				return errBad("invalid_time")
+			}
 			if err := tx.Exec(ctx, `UPDATE list_items SET due_at=? WHERE id=?`, *in.DueAt, iid); err != nil {
 				return err
 			}
@@ -376,6 +388,9 @@ func (a *App) hCreateBoard(c *Ctx) error {
 	}
 	shares, err := a.createShares(c, in.Shares)
 	if err != nil {
+		return err
+	}
+	if err := limitCount(c.ctx(), a.DB, maxPerOwner, `SELECT COUNT(*) FROM boards WHERE owner_id=?`, c.U.ID); err != nil {
 		return err
 	}
 	id, now := crypto.NewID(), a.unix()
@@ -569,6 +584,12 @@ func (a *App) hAddCard(c *Ctx) error {
 	if in.Title == nil || clean(*in.Title, 200) == "" || in.ColumnID == nil {
 		return errBad("title_required")
 	}
+	if in.DueAt != nil && !validTime(*in.DueAt) {
+		return errBad("invalid_time")
+	}
+	if err := limitCount(c.ctx(), a.DB, maxCardsBoard, `SELECT COUNT(*) FROM cards WHERE board_id=?`, id); err != nil {
+		return err
+	}
 	kid, now := crypto.NewID(), a.unix()
 	err := a.DB.InTx(c.ctx(), func(tx *db.Tx) error {
 		var n, pos int
@@ -637,6 +658,9 @@ func (a *App) hUpdateCard(c *Ctx) error {
 			}
 		}
 		if in.DueAt != nil {
+			if !validTime(*in.DueAt) {
+				return errBad("invalid_time")
+			}
 			if err := set("due_at", *in.DueAt); err != nil {
 				return err
 			}

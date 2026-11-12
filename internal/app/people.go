@@ -43,8 +43,8 @@ func (a *App) directory(ctx context.Context, viewer *User) ([]Person, error) {
 				return err
 			}
 			if vis || viewer.Can(PermUsers) || viewer.ID == p.ID {
-				p.Email, _ = a.Keys.DecryptField(e, "users.email")
-				p.Phone, _ = a.Keys.DecryptField(ph, "users.phone")
+				p.Email, _ = a.Keys.DecryptField(e, "users.email", p.ID)
+				p.Phone, _ = a.Keys.DecryptField(ph, "users.phone", p.ID)
 			}
 			if p.Roles = roles[p.ID]; p.Roles == nil {
 				p.Roles = []string{}
@@ -195,7 +195,10 @@ func (a *App) hUpdateRole(c *Ctx) error {
 				return errBad("name_taken")
 			}
 		}
-		return setRolePerms(c.ctx(), tx, id, in.Perms)
+		if err := setRolePerms(c.ctx(), tx, id, in.Perms); err != nil {
+			return err
+		}
+		return requireAdmins(c.ctx(), tx)
 	})
 	if err != nil {
 		return err
@@ -217,7 +220,10 @@ func (a *App) hDeleteRole(c *Ctx) error {
 		if err := tx.Exec(c.ctx(), `DELETE FROM acl WHERE subj_type='role' AND subj_id=?`, id); err != nil {
 			return err
 		}
-		return tx.Exec(c.ctx(), `DELETE FROM roles WHERE id=?`, id)
+		if err := tx.Exec(c.ctx(), `DELETE FROM roles WHERE id=?`, id); err != nil {
+			return err
+		}
+		return requireAdmins(c.ctx(), tx)
 	})
 	if err != nil {
 		return err
@@ -316,6 +322,9 @@ func (a *App) hCreateGroup(c *Ctx) error {
 	}
 	if in.Scope == "global" && !c.U.Can(PermRoles) {
 		return errForbidden
+	}
+	if err := limitCount(c.ctx(), a.DB, maxPerOwner, `SELECT COUNT(*) FROM groups WHERE owner_id=?`, c.U.ID); err != nil {
+		return err
 	}
 	id := crypto.NewID()
 	err := a.DB.InTx(c.ctx(), func(tx *db.Tx) error {
@@ -451,6 +460,20 @@ func adminCount(ctx context.Context, q db.Q, perm string) (int, error) {
 	return n, err
 }
 
+// requireAdmins fails when a change would leave the organisation without
+// anybody who can manage accounts or roles. It is checked inside the
+// transaction of every change that can remove those permissions.
+func requireAdmins(ctx context.Context, q db.Q) error {
+	for _, p := range []string{PermUsers, PermRoles} {
+		if n, err := adminCount(ctx, q, p); err != nil {
+			return err
+		} else if n == 0 {
+			return errBad("last_admin")
+		}
+	}
+	return nil
+}
+
 func (a *App) hAdminUpdateUser(c *Ctx) error {
 	id := c.Param("id")
 	var in struct {
@@ -479,6 +502,7 @@ func (a *App) hAdminUpdateUser(c *Ctx) error {
 		return errForbidden
 	}
 	var changes []string
+	kick := false
 	err = a.DB.InTx(c.ctx(), func(tx *db.Tx) error {
 		ctx := c.ctx()
 		if in.Username != nil {
@@ -500,14 +524,23 @@ func (a *App) hAdminUpdateUser(c *Ctx) error {
 				changes = append(changes, "renamed "+t.Username+" -> "+name)
 			}
 		}
-		if in.DisplayName != nil && clean(*in.DisplayName, 100) != "" {
-			if err := tx.Exec(ctx, `UPDATE users SET display_name=? WHERE id=?`, clean(*in.DisplayName, 100), id); err != nil {
+		if in.DisplayName != nil && cleanName(*in.DisplayName) != "" && cleanName(*in.DisplayName) != t.DisplayName {
+			name := cleanName(*in.DisplayName)
+			if taken, err := nameTaken(ctx, tx, name, id); err != nil {
+				return err
+			} else if taken {
+				return errBad("display_name_taken")
+			}
+			if err := tx.Exec(ctx, `UPDATE users SET display_name=?, display_key=? WHERE id=?`, name, nameKey(name), id); err != nil {
 				return err
 			}
 		}
 		if in.Email != nil {
-			e := clean(*in.Email, 200)
-			if err := tx.Exec(ctx, `UPDATE users SET email_enc=?, email_idx=? WHERE id=?`, a.Keys.EncryptField(e, "users.email"), a.Keys.BlindIndex(e), id); err != nil {
+			e, err := cleanEmail(*in.Email)
+			if err != nil {
+				return err
+			}
+			if err := tx.Exec(ctx, `UPDATE users SET email_enc=?, email_idx=? WHERE id=?`, a.Keys.EncryptField(e, "users.email", id), a.Keys.BlindIndex(e), id); err != nil {
 				return err
 			}
 		}
@@ -522,6 +555,7 @@ func (a *App) hAdminUpdateUser(c *Ctx) error {
 				if err := tx.Exec(ctx, `DELETE FROM sessions WHERE user_id=?`, id); err != nil {
 					return err
 				}
+				kick = true
 			}
 			changes = append(changes, "disabled="+map[bool]string{true: "yes", false: "no"}[*in.Disabled])
 		}
@@ -532,7 +566,12 @@ func (a *App) hAdminUpdateUser(c *Ctx) error {
 			changes = append(changes, "mfa_required="+map[bool]string{true: "yes", false: "no"}[*in.MFARequired])
 		}
 		if in.ResetMFA {
-			if err := tx.Exec(ctx, `UPDATE users SET totp_enabled=0, totp_secret_enc='', totp_last_step=0 WHERE id=?`, id); err != nil {
+			// Removes every second factor: authenticator app, recovery codes
+			// and passkeys.
+			if err := resetTOTP(ctx, tx, id); err != nil {
+				return err
+			}
+			if err := tx.Exec(ctx, `DELETE FROM passkeys WHERE user_id=?`, id); err != nil {
 				return err
 			}
 			changes = append(changes, "mfa reset")
@@ -550,17 +589,13 @@ func (a *App) hAdminUpdateUser(c *Ctx) error {
 			changes = append(changes, "roles="+strings.Join(*in.Roles, ","))
 		}
 		// Never allow the organisation to end up without an administrator.
-		for _, p := range []string{PermUsers, PermRoles} {
-			if n, err := adminCount(ctx, tx, p); err != nil {
-				return err
-			} else if n == 0 {
-				return errBad("last_admin")
-			}
-		}
-		return nil
+		return requireAdmins(ctx, tx)
 	})
 	if err != nil {
 		return err
+	}
+	if kick {
+		a.hub.kickUser(id, "")
 	}
 	a.logAct(c, true, "user.updated", "user", id, t.Username+": "+strings.Join(changes, "; "))
 	return c.OK()
@@ -593,13 +628,33 @@ func (a *App) SetPassword(ctx context.Context, id, password string, mustChange b
 	if err := a.checkPassword(password); err != nil {
 		return err
 	}
-	return a.DB.InTx(ctx, func(tx *db.Tx) error {
-		if err := tx.Exec(ctx, `UPDATE users SET password_hash=?, must_change_password=?, failed_logins=0, locked_until=0 WHERE id=?`,
-			crypto.HashPassword(password), b2i(mustChange), id); err != nil {
-			return err
-		}
-		return tx.Exec(ctx, `DELETE FROM sessions WHERE user_id=?`, id)
-	})
+	if err := a.DB.Exec(ctx, `UPDATE users SET password_hash=?, must_change_password=?, failed_logins=0, locked_until=0 WHERE id=?`,
+		crypto.HashPassword(password), b2i(mustChange), id); err != nil {
+		return err
+	}
+	return a.SignOutUser(ctx, id, "")
+}
+
+// hAdminSignOut ends every session of an account ("sign out everywhere"),
+// for example when a device was lost.
+func (a *App) hAdminSignOut(c *Ctx) error {
+	id := c.Param("id")
+	t, err := a.userByID(c.ctx(), id)
+	if err != nil || t.deletedAt != 0 {
+		return errNotFound
+	}
+	if !c.U.Can(PermRoles) && t.ID != c.U.ID && len(t.Perms) > 0 {
+		return errForbidden
+	}
+	keep := ""
+	if id == c.U.ID { // signing yourself out here keeps the session you are using
+		keep = c.sess.idHash
+	}
+	if err := a.SignOutUser(c.ctx(), id, keep); err != nil {
+		return err
+	}
+	a.logAct(c, true, "sessions.ended", "user", id, t.Username+": by an administrator")
+	return c.OK()
 }
 
 // hAdminDeleteUser anonymises the account: personal data and credentials are
@@ -627,11 +682,16 @@ func (a *App) hAdminDeleteUser(c *Ctx) error {
 			`DELETE FROM groups WHERE scope='local' AND owner_id=?`,
 			`DELETE FROM acl WHERE subj_type='user' AND subj_id=?`,
 			`DELETE FROM channel_reads WHERE user_id=?`,
+			`DELETE FROM passkeys WHERE user_id=?`,
+			`DELETE FROM recovery_codes WHERE user_id=?`,
 			`UPDATE activity SET ip='', summary='' WHERE user_id=?`,
 		}
 		// Private (unshared) resources would be unreachable: remove them.
 		for typ, table := range resTables {
-			if typ == "channel" {
+			// Channels have no private form. Decisions are the organisation's
+			// record and are never deleted, shared or not (their numbering
+			// also depends on that).
+			if typ == "channel" || typ == "decision" {
 				continue
 			}
 			stmts = append(stmts, `DELETE FROM `+table+` WHERE owner_id=? AND NOT EXISTS (SELECT 1 FROM acl a WHERE a.res_type='`+typ+`' AND a.res_id=`+table+`.id)`)
@@ -642,21 +702,15 @@ func (a *App) hAdminDeleteUser(c *Ctx) error {
 			}
 		}
 		if err := tx.Exec(ctx, `UPDATE users SET username=?, display_name='', email_enc='', email_idx='', phone_enc='', password_hash='',
-			totp_secret_enc='', totp_enabled=0, settings='{}', disabled=1, deleted_at=? WHERE id=?`, "deleted-"+id[:12], a.unix(), id); err != nil {
+			totp_secret_enc='', totp_enabled=0, settings='{}', display_key='', disabled=1, deleted_at=? WHERE id=?`, "deleted-"+id[len(id)-16:], a.unix(), id); err != nil {
 			return err
 		}
-		for _, p := range []string{PermUsers, PermRoles} {
-			if n, err := adminCount(ctx, tx, p); err != nil {
-				return err
-			} else if n == 0 {
-				return errBad("last_admin")
-			}
-		}
-		return nil
+		return requireAdmins(ctx, tx)
 	})
 	if err != nil {
 		return err
 	}
+	a.hub.kickUser(id, "")
 	a.gcFiles(c.ctx())
 	a.logAct(c, true, "user.deleted", "user", id, t.Username)
 	return c.OK()

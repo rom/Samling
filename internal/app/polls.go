@@ -64,6 +64,9 @@ func (a *App) scanPoll(r scanner) (*Poll, error) {
 		return nil, err
 	}
 	p.Voted, p.Shared = voted > 0, shares > 0
+	if p.Anonymous { // also for polls created before this was enforced
+		p.ResultsVisible, p.AllowChange = "after_close", false
+	}
 	// A poll is closed when closed manually or when its deadline has passed.
 	if p.ClosedAt == 0 && p.ClosesAt > 0 && p.ClosesAt <= a.unix() {
 		p.ClosedAt = p.ClosesAt
@@ -207,10 +210,16 @@ func (a *App) hCreatePoll(c *Ctx) error {
 		in.MaxChoices = 0
 	}
 	if in.Anonymous {
+		// A vote that could be changed would have to be linked to its voter,
+		// and a running tally would reveal each vote as it arrives.
 		in.AllowChange = false
+		in.ResultsVisible = "after_close"
 	}
-	if in.ClosesAt != 0 && in.ClosesAt <= a.unix() {
+	if !validTime(in.ClosesAt) || (in.ClosesAt != 0 && in.ClosesAt <= a.unix()) {
 		return errBad("closes_in_past")
+	}
+	if err := limitCount(c.ctx(), a.DB, maxPerOwner, `SELECT COUNT(*) FROM polls WHERE owner_id=?`, c.U.ID); err != nil {
+		return err
 	}
 	shares, err := a.createShares(c, in.Shares)
 	if err != nil {
@@ -305,19 +314,53 @@ func (a *App) hVote(c *Ctx) error {
 	}
 	err = a.DB.InTx(c.ctx(), func(tx *db.Tx) error {
 		ctx := c.ctx()
-		var voted int
-		if err := tx.Row(ctx, `SELECT COUNT(*) FROM poll_voters WHERE poll_id=? AND user_id=?`, id, c.U.ID).Scan(&voted); err != nil {
+		if p.Anonymous {
+			// Votes of an anonymous poll are handled one at a time (row lock
+			// on the poll), because the voter list is rewritten below.
+			if err := tx.Exec(ctx, `UPDATE polls SET closed_at=closed_at WHERE id=?`, id); err != nil {
+				return err
+			}
+		}
+		// Recording the voter is the first write and decides, atomically,
+		// whether this is a first vote. Parallel requests of the same voter
+		// wait here for each other (unique key), so none of them can add a
+		// second ballot.
+		first, err := tx.ExecN(ctx, `INSERT INTO poll_voters (poll_id,user_id) VALUES (?,?) ON CONFLICT DO NOTHING`, id, c.U.ID)
+		if err != nil {
 			return err
 		}
-		if voted > 0 {
+		if first == 0 {
 			if !p.AllowChange || p.Anonymous {
 				return errBad("already_voted")
+			}
+			// Lock the voter row, then replace the earlier ballot.
+			if err := tx.Exec(ctx, `UPDATE poll_voters SET user_id=user_id WHERE poll_id=? AND user_id=?`, id, c.U.ID); err != nil {
+				return err
 			}
 			if err := tx.Exec(ctx, `DELETE FROM ballots WHERE poll_id=? AND user_id=?`, id, c.U.ID); err != nil {
 				return err
 			}
-		} else if err := tx.Exec(ctx, `INSERT INTO poll_voters (poll_id,user_id) VALUES (?,?)`, id, c.U.ID); err != nil {
-			return err
+		} else if p.Anonymous {
+			// Rewrite the voter list in an order that has nothing to do with
+			// the order of voting. Otherwise the n-th voter row would match
+			// the n-th ballot row in the database and in every backup.
+			var voters []string
+			if err := tx.Each(ctx, `SELECT user_id FROM poll_voters WHERE poll_id=? ORDER BY user_id`, []any{id}, func(r *sql.Rows) error {
+				var u string
+				err := r.Scan(&u)
+				voters = append(voters, u)
+				return err
+			}); err != nil {
+				return err
+			}
+			if err := tx.Exec(ctx, `DELETE FROM poll_voters WHERE poll_id=?`, id); err != nil {
+				return err
+			}
+			for _, u := range voters {
+				if err := tx.Exec(ctx, `INSERT INTO poll_voters (poll_id,user_id) VALUES (?,?) ON CONFLICT DO NOTHING`, id, u); err != nil {
+					return err
+				}
+			}
 		}
 		// Ballot ids are fully random (not time-ordered) and anonymous ballots
 		// carry no voter and no timestamp, so they cannot be correlated.
@@ -338,7 +381,11 @@ func (a *App) hVote(c *Ctx) error {
 	if err != nil {
 		return err
 	}
-	a.logAct(c, false, "poll.voted", "poll", id, p.Title)
+	if !p.Anonymous {
+		// No history entry for anonymous polls: a time-stamped "voted" record
+		// per person would allow votes to be matched to people.
+		a.logAct(c, false, "poll.voted", "poll", id, p.Title)
+	}
 	a.hub.publish(Event{"poll", id})
 	return c.OK()
 }

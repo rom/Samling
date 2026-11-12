@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -39,6 +40,10 @@ type Config struct {
 		InsecureHTTP bool `yaml:"insecure_http"`
 		// TrustedProxy trusts X-Forwarded-For / X-Forwarded-Proto.
 		TrustedProxy bool `yaml:"trusted_proxy"`
+		// PublicURL is the address people use to reach the site, for example
+		// https://club.example.org. Passkeys are bound to it. When empty it
+		// is taken from each request.
+		PublicURL string `yaml:"public_url"`
 	} `yaml:"server"`
 
 	Database struct {
@@ -58,6 +63,9 @@ type Config struct {
 			Insecure  bool   `yaml:"insecure"`
 		} `yaml:"s3"`
 		MaxUploadMB int64 `yaml:"max_upload_mb"`
+		// UserQuotaMB limits the total size of the files one account has
+		// uploaded (0 = unlimited).
+		UserQuotaMB int64 `yaml:"user_quota_mb"`
 	} `yaml:"storage"`
 
 	Security struct {
@@ -65,6 +73,9 @@ type Config struct {
 		MinPasswordLength int    `yaml:"min_password_length"`
 		SessionHours      int    `yaml:"session_hours"`
 		Landlock          string `yaml:"landlock"` // on | off | strict
+		// IdleTimeoutMinutes signs a session out after this long without
+		// activity (0 = only the fixed session lifetime applies).
+		IdleTimeoutMinutes int `yaml:"idle_timeout_minutes"`
 	} `yaml:"security"`
 }
 
@@ -75,6 +86,7 @@ func defaults() *Config {
 	c.Storage.Backend = "fs"
 	c.Storage.S3.Region = "us-east-1"
 	c.Storage.MaxUploadMB = 50
+	c.Storage.UserQuotaMB = 2048
 	c.Security.MinPasswordLength = 12
 	c.Security.SessionHours = 24 * 14
 	c.Security.Landlock = "on"
@@ -128,6 +140,7 @@ func Load(path string) (*Config, error) {
 	envStr("SAMLING_TLS_KEY", &c.Server.TLS.Key)
 	envBool("SAMLING_INSECURE_HTTP", &c.Server.InsecureHTTP)
 	envBool("SAMLING_TRUSTED_PROXY", &c.Server.TrustedProxy)
+	envStr("SAMLING_PUBLIC_URL", &c.Server.PublicURL)
 	envStr("SAMLING_DB_DRIVER", &c.Database.Driver)
 	envStr("SAMLING_DB_DSN", &c.Database.DSN)
 	envStr("SAMLING_STORAGE_BACKEND", &c.Storage.Backend)
@@ -142,13 +155,16 @@ func Load(path string) (*Config, error) {
 	envStr("SAMLING_LANDLOCK", &c.Security.Landlock)
 	for key, dst := range map[string]*int{
 		"SAMLING_PORT": &c.Server.Port, "SAMLING_MIN_PASSWORD_LENGTH": &c.Security.MinPasswordLength,
-		"SAMLING_SESSION_HOURS": &c.Security.SessionHours,
+		"SAMLING_SESSION_HOURS": &c.Security.SessionHours, "SAMLING_IDLE_TIMEOUT_MINUTES": &c.Security.IdleTimeoutMinutes,
 	} {
 		if err := envInt(key, dst); err != nil {
 			return nil, err
 		}
 	}
 	if err := envInt("SAMLING_MAX_UPLOAD_MB", &c.Storage.MaxUploadMB); err != nil {
+		return nil, err
+	}
+	if err := envInt("SAMLING_USER_QUOTA_MB", &c.Storage.UserQuotaMB); err != nil {
 		return nil, err
 	}
 	return c, nil
@@ -185,6 +201,16 @@ func (c *Config) Finish() error {
 	}
 	if c.Security.MinPasswordLength < 8 {
 		return errors.New("security.min_password_length must be at least 8")
+	}
+	if c.Server.PublicURL != "" {
+		u, err := url.Parse(c.Server.PublicURL)
+		if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" || strings.Trim(u.Path, "/") != "" {
+			return errors.New("server.public_url must look like https://club.example.org (no path)")
+		}
+		c.Server.PublicURL = u.Scheme + "://" + u.Host
+	}
+	if c.Security.IdleTimeoutMinutes < 0 || c.Storage.UserQuotaMB < 0 {
+		return errors.New("security.idle_timeout_minutes and storage.user_quota_mb must not be negative")
 	}
 	if c.Storage.MaxUploadMB < 1 || c.Security.SessionHours < 1 {
 		return errors.New("storage.max_upload_mb and security.session_hours must be positive")

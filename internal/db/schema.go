@@ -13,6 +13,7 @@ var Tables = []string{
 	"polls", "poll_options", "ballots", "ballot_choices", "poll_voters",
 	"events", "meetings", "agenda_items", "decisions", "decision_revisions",
 	"boards", "board_columns", "cards", "activity", "settings",
+	"recovery_codes", "passkeys",
 }
 
 // migrations are applied in order; never edit an entry that has been
@@ -328,4 +329,25 @@ CREATE TABLE settings (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
 )`,
+	// 2: display name key (uniqueness), MFA recovery codes, passkeys, and a
+	// guard against more than one ballot per voter in non-anonymous polls.
+	`
+ALTER TABLE users ADD COLUMN display_key TEXT NOT NULL DEFAULT '';
+CREATE TABLE recovery_codes (
+  code_hash TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  used_at BIGINT NOT NULL DEFAULT 0
+);
+CREATE INDEX recovery_codes_user ON recovery_codes(user_id);
+CREATE TABLE passkeys (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  cred_id TEXT NOT NULL UNIQUE,
+  data TEXT NOT NULL,
+  created_at BIGINT NOT NULL,
+  last_used_at BIGINT NOT NULL DEFAULT 0
+);
+CREATE INDEX passkeys_user ON passkeys(user_id);
+CREATE UNIQUE INDEX ballots_one_per_voter ON ballots(poll_id, user_id) WHERE user_id <> ''`,
 }

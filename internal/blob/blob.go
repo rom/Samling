@@ -5,6 +5,7 @@
 package blob
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -169,19 +170,32 @@ func (s *S3) List(ctx context.Context, fn func(string) error) error {
 
 // ---------- encrypting store ----------
 
-// Store encrypts on the way in and decrypts on the way out.
+// Store encrypts on the way in and decrypts on the way out. Each object is
+// encrypted with its own key, derived from the storage key (see
+// crypto.Keys.BlobKey). Format: "SMLBLOB2" followed by the chunked AEAD
+// stream. Objects written by the first release (one shared key, no prefix)
+// are still readable.
 type Store struct {
-	B   Backend
-	key []byte
+	B    Backend
+	keys *crypto.Keys
 }
 
-func NewStore(b Backend, key []byte) *Store { return &Store{B: b, key: key} }
+const blobMagic = "SMLBLOB2"
+
+func NewStore(b Backend, keys *crypto.Keys) *Store { return &Store{B: b, keys: keys} }
 
 // Put encrypts r and stores it under key.
 func (s *Store) Put(ctx context.Context, key string, r io.Reader) error {
+	if !keyRe.MatchString(key) {
+		return errors.New("invalid blob key")
+	}
 	pr, pw := io.Pipe()
 	go func() {
-		enc, err := crypto.NewEncryptWriter(pw, s.key)
+		if _, err := pw.Write([]byte(blobMagic)); err != nil {
+			pw.CloseWithError(err)
+			return
+		}
+		enc, err := crypto.NewEncryptWriter(pw, s.keys.BlobKey(key))
 		if err != nil {
 			pw.CloseWithError(err)
 			return
@@ -210,7 +224,15 @@ func (s *Store) Get(ctx context.Context, key string) (io.ReadCloser, error) {
 	if err != nil {
 		return nil, err
 	}
-	dec, err := crypto.NewDecryptReader(rc, s.key)
+	head := make([]byte, len(blobMagic))
+	var dec io.Reader
+	if _, err = io.ReadFull(rc, head); err == nil {
+		if string(head) == blobMagic {
+			dec, err = crypto.NewDecryptReader(rc, s.keys.BlobKey(key))
+		} else { // first-release object: shared key, the bytes read are its header
+			dec, err = crypto.NewDecryptReader(io.MultiReader(bytes.NewReader(head), rc), s.keys.Blob)
+		}
+	}
 	if err != nil {
 		rc.Close()
 		return nil, fmt.Errorf("blob %s: %w", key, err)

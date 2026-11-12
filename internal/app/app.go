@@ -11,12 +11,14 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/rom/samling/internal/blob"
 	"github.com/rom/samling/internal/config"
@@ -38,11 +40,15 @@ type App struct {
 	api   *limiter // all API calls
 	mux   *http.ServeMux
 	now   func() time.Time
+	// streamPing is how often an open event stream is re-validated.
+	streamPing time.Duration
+	ceremonies *ceremonies // passkey registrations / sign-ins in progress
 }
 
 func New(cfg *config.Config, d *db.DB, blobs *blob.Store, keys *crypto.Keys, static fs.FS, log *slog.Logger) (*App, error) {
 	a := &App{Cfg: cfg, DB: d, Blobs: blobs, Keys: keys, Log: log, hub: newHub(),
-		login: newLimiter(30, time.Minute), api: newLimiter(3000, time.Minute), now: time.Now}
+		login: newLimiter(30, time.Minute), api: newLimiter(3000, time.Minute), now: time.Now,
+		streamPing: 25 * time.Second, ceremonies: newCeremonies()}
 	if err := a.seed(context.Background()); err != nil {
 		return nil, err
 	}
@@ -109,6 +115,20 @@ func (c *Ctx) QueryInt(name string, def int64) int64 {
 }
 
 func (c *Ctx) IP() string { return c.A.clientIP(c.R) }
+
+// limiterKey is the rate limiting key of a client address. IPv6 clients
+// control a whole /64, so the limit applies to that prefix.
+func limiterKey(ip string) string {
+	addr, err := netip.ParseAddr(ip)
+	if err != nil || addr.Is4() || addr.Is4In6() {
+		return ip
+	}
+	p, err := addr.Prefix(64)
+	if err != nil {
+		return ip
+	}
+	return p.String()
+}
 
 func (a *App) clientIP(r *http.Request) string {
 	if a.Cfg.Server.TrustedProxy {
@@ -280,6 +300,7 @@ func newLimiter(max int, window time.Duration) *limiter {
 }
 
 func (l *limiter) allow(key string) bool {
+	key = limiterKey(key)
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	now := time.Now()
@@ -330,13 +351,57 @@ func (a *App) logRaw(ctx context.Context, uid, ip string, audit bool, action, re
 
 // ---------- small helpers ----------
 
+// clean prepares text input for storage: valid UTF-8, no control characters
+// (line breaks and tabs are kept, with line endings normalised), trimmed and
+// limited in length. Removing control characters keeps stored text from
+// smuggling line breaks or NUL bytes into exports and database drivers.
 func clean(s string, max int) string {
-	s = strings.TrimSpace(strings.ToValidUTF8(s, ""))
+	s = strings.ReplaceAll(strings.ToValidUTF8(s, ""), "\r\n", "\n")
+	s = strings.Map(func(r rune) rune {
+		if r == '\n' || r == '\t' {
+			return r
+		}
+		if r == '\r' {
+			return '\n'
+		}
+		if unicode.IsControl(r) {
+			return -1
+		}
+		return r
+	}, s)
+	s = strings.TrimSpace(s)
 	if r := []rune(s); len(r) > max {
 		s = string(r[:max])
 	}
 	return s
 }
+
+// maxTime is the latest timestamp accepted from clients (year 9999). Bounding
+// times keeps date arithmetic in SQL from overflowing.
+const maxTime = 253402300799
+
+func validTime(t int64) bool { return t >= 0 && t <= maxTime }
+
+// limitCount refuses to create more rows once a per-owner or per-parent
+// limit is reached (protection against filling the database).
+func limitCount(ctx context.Context, q db.Q, max int, query string, args ...any) error {
+	var n int
+	if err := q.Row(ctx, query, args...).Scan(&n); err != nil {
+		return err
+	}
+	if n >= max {
+		return &apiError{http.StatusConflict, "limit_reached"}
+	}
+	return nil
+}
+
+// Per-owner and per-parent limits.
+const (
+	maxPerOwner     = 1000 // lists, boards, polls, documents, groups per account
+	maxEventsOwner  = 10000
+	maxItemsPerList = 2000
+	maxCardsBoard   = 2000
+)
 
 func b2i(b bool) int {
 	if b {

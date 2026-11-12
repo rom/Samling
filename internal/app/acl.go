@@ -211,32 +211,51 @@ func (a *App) hSetACL(c *Ctx) error {
 	if a.isDM(c.ctx(), t, id) {
 		return errForbidden
 	}
-	// Entries for other people's local groups come back blanked from GET;
-	// keep the stored ones instead of dropping them.
-	old, err := a.getShares(c.ctx(), t, id)
-	if err != nil {
+	var owner string
+	if err := a.DB.Row(c.ctx(), `SELECT owner_id FROM `+resTables[t]+` WHERE id=?`, id).Scan(&owner); err != nil {
 		return err
 	}
+	isOwner := owner == c.U.ID
+	// Private (local) groups can only be used by the owner of the resource.
+	// Otherwise somebody else who manages it (a moderator) could add a group
+	// of their own that the owner cannot see and therefore never remove.
 	kept := []Share{}
 	for _, s := range shares {
 		if s.Type == "group" && s.ID == "" {
-			continue
+			continue // an owner's private group, shown blanked to the caller
+		}
+		if s.Type == "group" && !isOwner {
+			var scope string
+			_ = a.DB.Row(c.ctx(), `SELECT scope FROM groups WHERE id=?`, s.ID).Scan(&scope)
+			if scope != "global" {
+				return errBad("invalid_share")
+			}
 		}
 		kept = append(kept, Share{Type: s.Type, ID: s.ID, Level: s.Level})
 	}
 	if err := a.validateShares(c.ctx(), c.U, kept); err != nil {
 		return err
 	}
-	for _, s := range old {
-		if s.Type == "group" {
-			var scope, owner string
-			_ = a.DB.Row(c.ctx(), `SELECT scope, owner_id FROM groups WHERE id=?`, s.ID).Scan(&scope, &owner)
-			if scope == "local" && owner != c.U.ID {
+	if !isOwner {
+		// The caller cannot see the owner's private groups, so cannot send
+		// them back: keep those shares. Private groups of anybody else are
+		// dropped.
+		old, err := a.getShares(c.ctx(), t, id)
+		if err != nil {
+			return err
+		}
+		for _, s := range old {
+			if s.Type != "group" {
+				continue
+			}
+			var scope, gOwner string
+			_ = a.DB.Row(c.ctx(), `SELECT scope, owner_id FROM groups WHERE id=?`, s.ID).Scan(&scope, &gOwner)
+			if scope == "local" && gOwner == owner {
 				kept = append(kept, Share{Type: s.Type, ID: s.ID, Level: s.Level})
 			}
 		}
 	}
-	err = a.DB.InTx(c.ctx(), func(tx *db.Tx) error {
+	err := a.DB.InTx(c.ctx(), func(tx *db.Tx) error {
 		if err := setShares(c.ctx(), tx, t, id, kept); err != nil {
 			return err
 		}

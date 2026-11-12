@@ -93,9 +93,25 @@ export function errText(e) {
   return t('err.network');
 }
 
+// Tells the server whether the person is actually using the application:
+// background refreshes (live updates) must not keep an idle session alive.
+let lastInteraction = Date.now();
+['pointerdown', 'keydown', 'touchstart'].forEach((ev) => window.addEventListener(ev, () => { lastInteraction = Date.now(); }, { capture: true, passive: true }));
+
+// safePath guards every API call: the path part may only contain plain
+// segments. Ids from the address bar or from server data can therefore never
+// redirect a request to another endpoint ("../" tricks), and neither can an
+// encoded slash, because "%" is not allowed either.
+function safePath(path) {
+  const p = path.split('?')[0];
+  return /^(\/[A-Za-z0-9_.-]+)+$/.test(p) && !p.split('/').some((seg) => seg === '.' || seg === '..');
+}
+
 async function request(method, path, opts = {}) {
+  if (!safePath(path)) throw new ApiError(0, 'bad_request_path');
   const headers = { ...(opts.headers || {}) };
   if (method !== 'GET' && S.csrf) headers['X-CSRF-Token'] = S.csrf;
+  if (Date.now() - lastInteraction < 90000) headers['X-User-Active'] = '1';
   let res;
   try {
     res = await fetch('/api' + path, { method, headers, body: opts.body, credentials: 'same-origin' });
@@ -105,7 +121,7 @@ async function request(method, path, opts = {}) {
   if (!res.ok) {
     let code = 'generic';
     try { code = (await res.json()).error || code; } catch { /* not json */ }
-    if (res.status === 401 && path !== '/auth/login' && S.me) setState({ me: null, csrf: '' });
+    if (res.status === 401 && !path.startsWith('/auth/') && S.me) setState({ me: null, csrf: '' });
     if (code === 'password_change_required' || code === 'mfa_setup_required') setState({ pending: code });
     throw new ApiError(res.status, code);
   }
@@ -119,8 +135,15 @@ export async function api(method, path, body) {
     opts.headers = { 'Content-Type': 'application/json' };
   }
   const res = await request(method, path, opts);
+  // Only API answers are parsed as data; a file download never is, whatever
+  // it contains.
   const ct = res.headers.get('Content-Type') || '';
-  return ct.startsWith('application/json') ? res.json() : res;
+  return ct.startsWith('application/json') && !res.headers.get('Content-Disposition') ? res.json() : res;
+}
+
+// apiSend posts a raw body (not JSON), for example a calendar file.
+export async function apiSend(method, path, body, contentType) {
+  return (await request(method, path, { body, headers: { 'Content-Type': contentType } })).json();
 }
 
 export async function uploadFile(file) {
@@ -135,8 +158,13 @@ export async function download(method, path, body, fallbackName) {
   const opts = body === undefined ? {} : { body: typeof body === 'string' ? body : JSON.stringify(body), headers: { 'Content-Type': 'application/json' } };
   const res = await request(method, path, opts);
   const cd = res.headers.get('Content-Disposition') || '';
-  const m = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(cd);
-  const name = m ? decodeURIComponent(m[1]) : fallbackName || 'download';
+  let name = fallbackName || 'download';
+  const ext = /filename\*=UTF-8''([^;]+)/i.exec(cd); // RFC 5987 form: percent-encoded
+  const plain = /filename="?([^";]+)"?/i.exec(cd);
+  try {
+    if (ext) name = decodeURIComponent(ext[1]);
+    else if (plain) name = plain[1];
+  } catch { /* keep the fallback name */ }
   const url = URL.createObjectURL(await res.blob());
   const a = document.createElement('a');
   a.href = url;
@@ -165,7 +193,8 @@ export async function act(fn, okMsg) {
 export async function loadSession() {
   try {
     const r = await api('GET', '/me');
-    setState({ me: r.user, csrf: r.csrf, pending: r.pending, org: r.org_name, maxUploadMB: r.max_upload_mb, minPassword: r.min_password, ready: true });
+    setState({ me: r.user, csrf: r.csrf, pending: r.pending, org: r.org_name, maxUploadMB: r.max_upload_mb, minPassword: r.min_password,
+      idleMinutes: r.idle_timeout_minutes, quotaMB: r.quota_mb, ready: true });
     if (r.user.locale && r.user.locale !== locale) setLocale(r.user.locale);
     applyPrefs(r.user.settings || {});
     if (!r.pending) await loadDirectory();
@@ -217,7 +246,16 @@ export function useLive(types, fn) {
 
 // ---------- routing (hash based) ----------
 
-const parseHash = () => (location.hash.replace(/^#\/?/, '') || 'home').split('/').map(decodeURIComponent);
+// The route comes from the address bar, so it can be chosen by whoever made
+// a link. Only plain segments are accepted (ids, section and topic names);
+// anything else shows the start page.
+function parseHash() {
+  try {
+    const parts = (location.hash.replace(/^#\/?/, '') || 'home').split('/').map(decodeURIComponent);
+    if (parts.every((p) => /^[A-Za-z0-9_-]{1,80}$/.test(p))) return parts;
+  } catch { /* malformed escape */ }
+  return ['home'];
+}
 export function useRoute() {
   const [route, setRoute] = useState(parseHash());
   useEffect(() => {

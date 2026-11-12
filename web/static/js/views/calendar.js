@@ -1,4 +1,4 @@
-import { html, useState, useRef, useStore, t, api, act, download, useLoad, useLive, can, getLocale, userName, linkify, linkLabel, safeUrl, fmtDate, fmtTime,
+import { html, useState, useRef, useStore, t, api, apiSend, act, download, useLoad, useLive, can, getLocale, userName, linkify, linkLabel, safeUrl, fmtDate, fmtTime,
   toInput, fromInput, toDateInput, fromDateInput, Icon, Modal, Field, useForm, ShareEditor, ShareButton, SharedBadge, Page, Loading, confirmDelete, toast } from '../lib.js';
 
 const DAY = 86400;
@@ -100,9 +100,8 @@ export function Calendar() {
     const file = e.target.files[0];
     if (!file) return;
     const text = await file.text();
-    const r = await act(async () => (await fetch('/api/calendar/import', { method: 'POST', credentials: 'same-origin',
-      headers: { 'Content-Type': 'text/calendar', 'X-CSRF-Token': s.csrf }, body: text })).json());
-    if (r && r.imported !== undefined) { toast(t('cal.imported', { n: r.imported })); st.reload(); } else if (r) toast(t('err.invalid_ics'), 'error');
+    const r = await act(() => apiSend('POST', '/calendar/import', text, 'text/calendar'));
+    if (r) { toast(t('cal.imported', { n: r.imported })); st.reload(); }
     e.target.value = '';
   };
   const done = (changed) => { setModal(null); if (changed) st.reload(); };

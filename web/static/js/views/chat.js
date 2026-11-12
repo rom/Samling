@@ -1,4 +1,4 @@
-import { html, useState, useEffect, useRef, useStore, t, api, act, download, uploadFile, useLoad, useLive, go, can, userName, linkify, fmtAgo, fmtSize,
+import { html, useState, useEffect, useRef, useStore, S, t, api, act, download, uploadFile, useLoad, useLive, go, can, userName, linkify, fmtAgo, fmtSize,
   Icon, Modal, Field, useForm, ShareEditor, ShareButton, Empty, Loading, confirmDelete, toast, errText } from '../lib.js';
 
 const dmName = (ch, me) => (ch.members || []).filter((id) => id !== me.id).map(userName).join(', ') || userName(me.id);
@@ -57,7 +57,7 @@ function Message({ m, ch, me, reload }) {
   return html`<div class=${'msg' + (m.pinned_at ? ' pinned' : '')}>
     <span class="avatar" aria-hidden="true">${userName(m.user_id).slice(0, 1).toUpperCase()}</span>
     <div class="body">
-      <div class="meta"><b>${userName(m.user_id)}</b><time>${fmtAgo(m.created_at)}</time>
+      <div class="meta"><b>${userName(m.user_id)}</b>${S.userMap[m.user_id] && html`<span class="handle">@${S.userMap[m.user_id].username}</span>`}<time>${fmtAgo(m.created_at)}</time>
         ${m.edited_at > 0 && html` · ${t('chat.edited')}`}${m.pinned_at > 0 && html` · <${Icon} name="pin" /> ${t('chat.pinned')}`}</div>
       ${editing
         ? html`<textarea value=${text} onInput=${(e) => setText(e.target.value)} aria-label=${t('common.edit')}></textarea>

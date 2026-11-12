@@ -27,7 +27,7 @@ function NewPoll({ onClose }) {
       <button type="button" onClick=${() => setOptions([...options, ''])}><${Icon} name="plus" /> ${t('polls.add_option')}</button></fieldset>`}
     <div class="grid2">
       ${f.kind === 'multi' && html`<${Field} label=${t('polls.max_choices')} hint=${t('polls.max_choices_hint')}><input type="number" min="0" max="30" ...${bind('max_choices')} /><//>`}
-      <${Field} label=${t('polls.results')}><select ...${bind('results_visible')}>
+      <${Field} label=${t('polls.results')} hint=${f.anonymous ? t('polls.results_anonymous') : ''}><select ...${bind('results_visible')} value=${f.anonymous ? 'after_close' : f.results_visible} disabled=${f.anonymous}>
         ${['always', 'after_vote', 'after_close'].map((k) => html`<option value=${k}>${t('polls.results_' + k)}</option>`)}</select><//>
       <${Field} label=${t('polls.closes')} hint=${t('polls.closes_hint')}><input type="datetime-local" ...${bind('closes')} /><//>
     </div>

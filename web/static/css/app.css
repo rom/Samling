@@ -283,3 +283,12 @@ code.secret { font-size: 1rem; background: var(--surface-2); padding: .3rem .5re
   .shell { display: block; height: auto; } .main { overflow: visible; }
   body { background: #fff; color: #000; }
 }
+
+/* the unique @username next to a display name (names can look alike) */
+.handle { color: var(--muted); font-size: .8rem; margin-right: .5rem; }
+.codes { display: grid; grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr)); gap: .4rem; list-style: none; padding: 0; margin: .6rem 0; }
+.codes li { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: var(--surface-2); border-radius: 6px; padding: .35rem .6rem; text-align: center; letter-spacing: .04em; }
+.notice { border: 1px solid var(--border); border-left: 4px solid var(--accent); border-radius: 8px; padding: .6rem .8rem; background: var(--accent-soft); margin: .6rem 0; }
+.login .or { display: flex; align-items: center; gap: .6rem; color: var(--muted); font-size: .85rem; margin: .9rem 0 .2rem; }
+.login .or::before, .login .or::after { content: ""; flex: 1; border-top: 1px solid var(--border); }
+.login button.wide { width: 100%; justify-content: center; }

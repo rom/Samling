@@ -13,7 +13,8 @@ import { Boards } from './views/boards.js';
 import { Search } from './views/search.js';
 import { People } from './views/people.js';
 import { History } from './views/history.js';
-import { Settings, PasswordForm, MfaSetup } from './views/settings.js';
+import { Settings, PasswordForm, MfaSetup, Passkeys } from './views/settings.js';
+import { passkeysSupported, signInWithPasskey } from './passkey.js';
 import { Admin } from './views/admin.js';
 import { Help } from './views/help.js';
 import { Tour } from './views/tour.js';
@@ -51,15 +52,30 @@ function Login() {
     }
     setBusy(false);
   };
+  const passkey = async () => {
+    setBusy(true);
+    setError('');
+    try {
+      await signInWithPasskey();
+      await loadSession();
+    } catch (err) {
+      // Closing the browser's passkey dialog is not an error worth showing.
+      setError(err instanceof ApiError ? errText(err) : '');
+    }
+    setBusy(false);
+  };
   return html`<main class="login"><form class="card" onSubmit=${submit}>
     <div class="lang"><${LangSwitch} /></div>
+    <img src="/icons/icon.svg" alt="" width="56" height="56" />
     <h1>${S.org}</h1><p class="muted">${t('login.subtitle')}</p>
     <${Field} label=${t('login.username')}><input ...${bind('username')} autocomplete="username" autocapitalize="none" required /><//>
     <${Field} label=${t('login.password')}><input type="password" ...${bind('password')} autocomplete="current-password" required /><//>
     ${needCode && html`<${Field} label=${t('login.code')} hint=${t('login.code_hint')}>
-      <input ...${bind('code')} inputmode="numeric" autocomplete="one-time-code" maxlength="7" autofocus /><//>`}
+      <input ...${bind('code')} autocomplete="one-time-code" autocapitalize="none" spellcheck="false" maxlength="24" autofocus /><//>`}
     ${error && html`<p class="error-text" role="alert">${error}</p>`}
     <button class="primary" disabled=${busy}>${t('login.submit')}</button>
+    ${passkeysSupported() && html`<div class="or">${t('login.or')}</div>
+      <button type="button" class="wide" onClick=${passkey} disabled=${busy}><${Icon} name="key" /> ${t('login.passkey')}</button>`}
   </form></main>`;
 }
 
@@ -71,7 +87,9 @@ function Pending() {
     <div class="lang"><${LangSwitch} /></div>
     ${s.pending === 'password_change_required'
       ? html`<h1>${t('pending.password_title')}</h1><p class="muted">${t('pending.password_text')}</p><${PasswordForm} onDone=${loadSession} />`
-      : html`<h1>${t('pending.mfa_title')}</h1><p class="muted">${t('pending.mfa_text')}</p><${MfaSetup} onDone=${loadSession} />`}
+      : html`<h1>${t('pending.mfa_title')}</h1><p class="muted">${t('pending.mfa_text')}</p>
+          <h3>${t('pending.mfa_app')}</h3><${MfaSetup} onDone=${loadSession} />
+          <h3 style=${{ marginTop: '1.2rem' }}>${t('pending.mfa_passkey')}</h3><${Passkeys} onChange=${loadSession} />`}
     <p><button class="link" onClick=${logout}>${t('nav.logout')}</button></p>
   </div></main>`;
 }

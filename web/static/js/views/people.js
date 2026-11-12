@@ -51,7 +51,7 @@ export function People() {
         <span class="avatar" aria-hidden="true">${u.display_name.slice(0, 1).toUpperCase()}</span>
         <span class="grow"><b>${u.display_name}</b> <span class="muted small">@${u.username}</span>
           ${u.roles.filter((r) => r !== 'member' && roles[r]).map((r) => html` <${Badge} kind="info">${roleName(roles[r])}<//>`)}<br />
-          <span class="small">${u.email && html`<a href=${'mailto:' + u.email}><${Icon} name="mail" /> ${u.email}</a> `}${u.phone && html`<a href=${'tel:' + u.phone.replace(/[^\d+]/g, '')}>${u.phone}</a>`}
+          <span class="small">${u.email && html`<a href=${'mailto:' + encodeURIComponent(u.email).replace(/%40/g, '@')}><${Icon} name="mail" /> ${u.email}</a> `}${u.phone && html`<a href=${'tel:' + u.phone.replace(/[^\d+]/g, '')}>${u.phone}</a>`}
             ${!u.email && !u.phone && html`<span class="muted">${t('people.no_contact')}</span>`}</span></span>
         ${u.id !== s.me.id && html`<button onClick=${() => dm(u)}><${Icon} name="chat" /> <span class="sr-only">${u.display_name}: </span>${t('people.message')}</button>`}
       </div>`)}</div>`}`}

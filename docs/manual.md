@@ -124,6 +124,20 @@ conversations between the people in them.
 * **Link to something in Samling** – a poll, a board, a document, a meeting
   and so on – with the chain button. The link shows the current name of the
   thing and opens it. See [Mentions and links](#21-mentions-and-links).
+* **Quote a message** in another message: choose the chain symbol on the
+  message (**Copy a link to the message**) and paste the link where you are
+  writing. It is shown as a quotation with author and time, and **Open**
+  leads to the original.
+* **Include a document**: open the document, choose **Copy a link to this
+  page** at the top (every poll, board, list, meeting and decision has the
+  same button) and paste it into the message – or pick the document with
+  the chain button above the message box. It is shown as a card with a
+  download button.
+* **Arrange the channels** in your own order with the arrows button beside
+  *Channels*. The order is yours alone.
+* **Edit a channel** (owner, administrators and leaders): **Edit channel**
+  changes the name, the topic and a longer description shown under *About
+  the channel*.
 * **Block direct messages** from a person with the button at the top of the
   conversation with them. They can then neither write to you nor start a new
   conversation with you, and they are not told. Channels are not affected.
@@ -466,3 +480,6 @@ Samling works the same way.
 * A link shows the name only to readers who have access to the thing it
   points to. Others see just that there is a link they cannot open.
 * A link does not share anything; share the item itself to let others in.
+* A quoted message is shown only to readers who can read the conversation
+  it comes from; a document card only to readers with access to the
+  document.

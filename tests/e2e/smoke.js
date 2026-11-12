@@ -26,6 +26,7 @@ const step = async (name, fn) => { try { await fn(); console.log('ok   ' + name)
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, locale: 'sv-SE', timezoneId: 'Europe/Stockholm', acceptDownloads: true });
   // The welcome tour is exercised with the second user; elsewhere it is switched off.
   await ctx.addInitScript(() => localStorage.setItem('samling.tour', 'off'));
+  await ctx.grantPermissions(['clipboard-read', 'clipboard-write']);
   const page = await ctx.newPage();
   page.on('console', (m) => { if (m.type() === 'error' && !m.text().includes('401')) { console.log('  console.error:', m.text().slice(0, 300)); errors.push('console'); } });
   page.on('pageerror', (e) => { console.log('  pageerror:', e.message.slice(0, 300)); errors.push('pageerror'); });
@@ -469,6 +470,72 @@ const step = async (name, fn) => { try { await fn(); console.log('ok   ' + name)
     await box.press('Enter');
     await page.locator('.msg', { hasText: 'ska inte få veta' }).waitFor();
     await shot('58-mention');
+  });
+
+  await step('chat: own channel order; edit a channel', async () => {
+    await page.goto(BASE + '/#/chat');
+    const list = page.getByRole('navigation', { name: 'Chatt' });
+    const first = async () => (await list.locator('a[href^="#/chat/"]').first().textContent()).trim();
+    if (!(await first()).includes('general')) throw new Error('unexpected first channel: ' + (await first()));
+    await list.getByRole('button', { name: 'Ändra ordningen på kanalerna' }).click();
+    await list.getByRole('button', { name: 'Flytta upp: styrelsen' }).click();
+    await page.waitForFunction(() => document.querySelector('.sort-row .grow').textContent === 'styrelsen');
+    await list.getByRole('button', { name: 'Ändra ordningen på kanalerna' }).click();
+    if (!(await first()).includes('styrelsen')) throw new Error('order not changed: ' + (await first()));
+    await page.reload();
+    await list.locator('a[href^="#/chat/"]').first().waitFor();
+    if (!(await first()).includes('styrelsen')) throw new Error('order not kept: ' + (await first()));
+    await list.getByRole('link', { name: /general/ }).click();
+    await page.getByRole('button', { name: 'Redigera kanal' }).click();
+    const dlg = page.getByRole('dialog', { name: 'Redigera kanal' });
+    await dlg.getByLabel('Namn').fill('allmänt');
+    await dlg.getByLabel('Ämne').fill('Allt som rör alla');
+    await dlg.getByLabel('Beskrivning').fill('Här skriver vi om sådant som rör hela föreningen.');
+    await dlg.getByRole('button', { name: 'Spara' }).click();
+    await page.getByRole('heading', { name: '# allmänt' }).waitFor();
+    await page.getByText('Om kanalen').click();
+    await page.getByText('Här skriver vi om sådant som rör hela föreningen.').waitFor();
+    await shot('59-channel-edit');
+    await page.getByRole('button', { name: 'Redigera kanal' }).click();
+    await page.getByRole('dialog').getByLabel('Namn').fill('general');
+    await page.getByRole('dialog').getByRole('button', { name: 'Spara' }).click();
+    await page.getByRole('heading', { name: '# general' }).waitFor();
+  });
+
+  await step('chat: quote a message through its link; include a document', async () => {
+    const clip = () => page.evaluate(() => navigator.clipboard.readText());
+    const box = page.getByLabel('Skriv ett meddelande');
+    const src = page.locator('.msg', { hasText: 'Här är budgeten' }).first();
+    await src.hover();
+    await src.getByRole('button', { name: 'Kopiera en länk till meddelandet' }).click();
+    const link = await clip();
+    if (!/#\/chat\/[0-9a-f]+\/[0-9a-f]+$/.test(link)) throw new Error('copied ' + link);
+    await page.getByRole('link', { name: /styrelsen/ }).click();
+    await page.getByRole('heading', { name: '# styrelsen' }).waitFor();
+    await box.fill('Se vad som skrevs: ' + link);
+    await box.press('Enter');
+    const quote = page.locator('.msg blockquote.quote').last();
+    await quote.getByText('Här är budgeten').waitFor();
+    await quote.getByText('Anna Admin').waitFor();
+    // A document, through the link of its page.
+    await page.goto(BASE + '/#/documents');
+    await page.getByRole('link', { name: /Stadgar/ }).first().click();
+    await page.getByRole('button', { name: 'Kopiera en länk till den här sidan' }).click();
+    const docLink = await clip();
+    await page.goto(BASE + '/#/chat');
+    await page.getByRole('link', { name: /styrelsen/ }).click();
+    await box.fill('Stadgarna finns här: ' + docLink);
+    await box.press('Enter');
+    const card = page.locator('.msg .doc-card').last();
+    await card.waitFor();
+    await shot('60-quote-and-document');
+    const dl = page.waitForEvent('download');
+    await card.getByRole('button', { name: /Ladda ner/ }).click();
+    await dl;
+    // The quotation leads to the message it quotes.
+    await quote.getByRole('link', { name: 'Öppna' }).click();
+    await page.getByRole('heading', { name: '# general' }).waitFor();
+    await page.locator('.msg.target', { hasText: 'Här är budgeten' }).waitFor();
   });
 
   await step('search', async () => {

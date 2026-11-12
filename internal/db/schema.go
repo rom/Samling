@@ -13,7 +13,7 @@ var Tables = []string{
 	"polls", "poll_options", "ballots", "ballot_choices", "poll_voters",
 	"events", "meetings", "agenda_items", "decisions", "decision_revisions",
 	"boards", "board_columns", "cards", "activity", "settings",
-	"recovery_codes", "passkeys", "reactions", "dm_blocks", "attachments", "notifications",
+	"recovery_codes", "passkeys", "reactions", "dm_blocks", "attachments", "notifications", "channel_order",
 }
 
 // migrations are applied in order; never edit an entry that has been
@@ -395,4 +395,12 @@ CREATE INDEX attachments_file ON attachments(file_id)`,
   UNIQUE (user_id, message_id)
 );
 CREATE INDEX notifications_user ON notifications(user_id, read_at)`,
+	// 5: channel descriptions; each person's own order of the channels
+	`ALTER TABLE channels ADD COLUMN description TEXT NOT NULL DEFAULT '';
+CREATE TABLE channel_order (
+  user_id TEXT NOT NULL,
+  channel_id TEXT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+  position INTEGER NOT NULL,
+  PRIMARY KEY (user_id, channel_id)
+)`,
 }

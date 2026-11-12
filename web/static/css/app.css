@@ -385,3 +385,17 @@ progress { display: block; width: min(20rem, 100%); margin: .6rem auto 0; accent
 .link-list > button { border: none; border-top: 1px solid var(--border); border-radius: 0; background: none; text-align: left; width: 100%; font: inherit; cursor: pointer; }
 .link-list > button:hover, .link-list > button:focus-visible { background: var(--surface-2); }
 .rows > a.unread { background: var(--accent-soft); }
+
+/* ---- quoted messages, document cards, channel order ---- */
+.quote { margin: .3rem 0; padding: .4rem .7rem; border-left: 4px solid var(--accent); background: var(--surface-2); border-radius: 0 8px 8px 0; max-width: 40rem; white-space: normal; }
+.quote-head { display: flex; flex-wrap: wrap; gap: .5rem; align-items: baseline; }
+.quote-head a { margin-left: auto; }
+.quote .pre { max-height: 9rem; overflow: hidden; }
+.doc-card { display: flex; align-items: center; gap: .6rem; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); padding: .4rem .6rem; margin: .3rem 0; max-width: 28rem; white-space: normal; }
+.doc-card img { display: block; width: 3.2rem; height: 3.2rem; object-fit: cover; border-radius: 6px; }
+.msg.target { outline: 2px solid var(--accent); background: var(--accent-soft); }
+.sort-row { display: flex; align-items: center; gap: .5rem; padding: .1rem .4rem .1rem 1rem; }
+.sort-row .icon-btn { min-width: 2rem; min-height: 2rem; }
+.sort-hint { padding: 0 1rem; }
+.about summary { cursor: pointer; }
+.about .pre { margin-top: .2rem; max-width: 46rem; }

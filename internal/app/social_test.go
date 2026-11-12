@@ -387,3 +387,103 @@ func TestInternalLinksResolveOnlyWhatTheReaderMaySee(t *testing.T) {
 	ch := leader.id("POST", "/api/channels", M{"name": "links", "shares": all()})
 	leader.ok("POST", "/api/channels/"+ch+"/messages", M{"body": "Vote here: [[poll:" + poll + "]]"}, nil)
 }
+
+func TestChannelOrderEditingAndQuotedMessages(t *testing.T) {
+	e := newEnv(t)
+	admin := e.user("admin", RoleAdmin)
+	leader := e.user("lena", RoleLeader)
+	a, b := e.user("anna"), e.user("bert")
+	names := func(cl *client) string {
+		var chans []Channel
+		cl.ok("GET", "/api/channels", nil, &chans)
+		var out []string
+		for _, ch := range chans {
+			if ch.Kind == "channel" {
+				out = append(out, ch.Name)
+			}
+		}
+		return strings.Join(out, ",")
+	}
+	ids := map[string]string{}
+	for _, n := range []string{"alpha", "beta", "secret"} {
+		shares := []M{share("all", "", 2)}
+		if n == "secret" {
+			shares = []M{share("user", a.ID, 2)}
+		}
+		ids[n] = leader.id("POST", "/api/channels", M{"name": n, "shares": shares})
+	}
+	var chans []Channel
+	a.ok("GET", "/api/channels", nil, &chans)
+	for _, ch := range chans {
+		ids[ch.Name] = ch.ID
+	}
+	if got := names(a); got != "alpha,beta,general,secret" {
+		t.Fatalf("default order: %s", got)
+	}
+	// Each person has their own order; channels left out follow by name.
+	a.ok("PUT", "/api/me/channel-order", M{"ids": []string{ids["secret"], ids["general"], "nonsense"}}, nil)
+	if got := names(a); got != "secret,general,alpha,beta" {
+		t.Fatalf("anna's order: %s", got)
+	}
+	if got := names(b); got != "alpha,beta,general" {
+		t.Fatalf("bert's order changed, or he sees the secret channel: %s", got)
+	}
+	// A channel the person cannot read is not remembered in their order.
+	b.ok("PUT", "/api/me/channel-order", M{"ids": []string{ids["secret"], ids["beta"]}}, nil)
+	var n int
+	e.a.DB.Row(context.Background(), `SELECT COUNT(*) FROM channel_order WHERE user_id=?`, b.ID).Scan(&n)
+	if n != 1 || names(b) != "beta,alpha,general" {
+		t.Fatalf("bert's order: %d %s", n, names(b))
+	}
+
+	// Editing: the owner and administrators, not ordinary members.
+	a.fail(403, "PATCH", "/api/channels/"+ids["alpha"], M{"name": "hacked"})
+	b.fail(404, "PATCH", "/api/channels/"+ids["secret"], M{"name": "hacked"})
+	admin.ok("PATCH", "/api/channels/"+ids["alpha"], M{"name": "Alfa", "topic": "First things", "description": "Everything that comes first.\nAsk here."}, nil)
+	admin.ok("PATCH", "/api/channels/"+ids["general"], M{"name": "allmänt", "topic": "", "description": "For everyone"}, nil)
+	admin.fail(400, "PATCH", "/api/channels/"+ids["alpha"], M{"name": "  "})
+	a.ok("GET", "/api/channels", nil, &chans)
+	for _, ch := range chans {
+		if ch.ID == ids["alpha"] && (ch.Name != "Alfa" || ch.Topic != "First things" || !strings.Contains(ch.Description, "Ask here")) {
+			t.Fatalf("edited channel: %+v", ch)
+		}
+	}
+	// A direct conversation cannot be renamed, not even by an administrator who is in it.
+	dm := admin.id("POST", "/api/dm", M{"user_ids": []string{a.ID}})
+	admin.fail(403, "PATCH", "/api/channels/"+dm, M{"name": "x"})
+
+	// Quoting a message: its text is given only to readers of its conversation.
+	mid := a.id("POST", "/api/channels/"+ids["secret"]+"/messages", M{"body": "The surprise party is on Friday"})
+	open := a.id("POST", "/api/channels/"+ids["beta"]+"/messages", M{"body": "Hello everyone"})
+	a.ok("POST", "/api/channels/"+ids["beta"]+"/messages", M{"body": "As I wrote: [[message:" + mid + "]] and [[message:" + open + "]]"}, nil)
+	refs := M{"refs": []M{{"type": "message", "id": mid}, {"type": "message", "id": open}, {"type": "message", "id": "missing"}}}
+	var got []LinkRef
+	b.ok("POST", "/api/links", refs, &got)
+	if len(got) != 1 || got[0].ID != open || got[0].Text != "Hello everyone" || got[0].UserID != a.ID || got[0].ChannelID != ids["beta"] || got[0].Title != "beta" {
+		t.Fatalf("bert resolves: %+v", got)
+	}
+	a.ok("POST", "/api/links", refs, &got)
+	if len(got) != 2 || got[0].Text != "The surprise party is on Friday" {
+		t.Fatalf("anna resolves: %+v", got)
+	}
+	// A deleted message can no longer be quoted.
+	a.ok("DELETE", "/api/messages/"+open, nil, nil)
+	b.ok("POST", "/api/links", refs, &got)
+	if len(got) != 0 {
+		t.Fatalf("deleted message still resolves: %+v", got)
+	}
+
+	// A linked document comes with what is needed to show and download it — for readers only.
+	f := a.upload("plan.png", tinyPNG)
+	doc := a.id("POST", "/api/documents", M{"name": "Site plan", "folder": "Camp", "file_id": f.ID})
+	drefs := M{"refs": []M{{"type": "document", "id": doc}}}
+	a.ok("POST", "/api/links", drefs, &got)
+	if len(got) != 1 || got[0].Title != "Site plan" || got[0].FileID != f.ID || got[0].Mime != "image/png" || got[0].Version != 1 || got[0].Folder != "Camp" {
+		t.Fatalf("document link: %+v", got)
+	}
+	b.ok("POST", "/api/links", drefs, &got)
+	if len(got) != 0 {
+		t.Fatal("document details given to somebody without access")
+	}
+	b.fail(404, "GET", "/api/files/"+f.ID+"/image", nil)
+}

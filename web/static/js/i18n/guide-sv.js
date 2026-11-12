@@ -146,6 +146,21 @@ Bara deltagarna kan läsa ett direktmeddelande. Inte ens en administratör kan d
 # Blockera direktmeddelanden
 Om du inte vill ha direktmeddelanden från någon öppnar du samtalet med personen och väljer [[block.do]], eller använder samma knapp bredvid personen under [[nav.people]]. Personen kan då varken skriva till dig eller starta ett nytt samtal med dig. Personen får inget besked, och kanaler påverkas inte. Häv blockeringen med [[block.undo]], på samma ställe eller under [[nav.settings]].
 
+# Citera ett meddelande eller ta med ett dokument
+- **Citera ett meddelande:** peka på meddelandet och välj kedjesymbolen ([[chat.copy_link]]). Klistra sedan in länken i ett meddelande – i samma samtal eller i ett annat. Meddelandet visas där som ett citat med avsändare och tid, och [[link.open_message]] leder till originalet.
+- **Ta med ett dokument:** öppna dokumentet under [[nav.documents]] och välj [[link.copy]] högst upp på sidan, och klistra in länken i ditt meddelande. Du kan också välja [[link.insert]] ovanför meddelandefältet och välja dokumentet. Det visas som ett kort med namn, version och en knapp för att ladda ner; en bild visas med en liten förhandsvisning.
+- Bara läsare som kan läsa det ursprungliga samtalet ser ett citerat meddelande, och bara läsare med åtkomst till dokumentet ser dess kort. Andra ser bara att det finns en länk som de inte kan öppna.
+
+# Ordna kanalerna som du vill
+1. Välj pilarna bredvid [[chat.channels]] ([[chat.sort]]).
+2. Flytta kanalerna upp och ner med pilarna på varje rad.
+3. Välj knappen igen när du är klar.
+
+Ordningen är bara din och följer med ditt konto till andra enheter. Nya kanaler hamnar efter dem du har ordnat.
+
+# Redigera en kanal
+Kanalens ägare, administratörer och ledare kan välja [[chat.edit_channel]] högst upp i kanalen för att ändra namn, ämne och en längre beskrivning. Beskrivningen visas under [[chat.about]].
+
 # Kanaler
 - För att skapa en kanal krävs behörigheten [[perm.channels.create]], som ledare vanligtvis har. Använd plustecknet bredvid [[chat.channels]] ([[chat.new_channel]]).
 - Kanalens delning avgör vilka som får läsa och vilka som får skriva. En kanal som alla får läsa men bara några får skriva i fungerar som en anslagstavla. I en sådan kanal ser du ett hänglås och texten [[chat.readonly]].

@@ -1,7 +1,7 @@
 // Pictures, the camera, text recognition, text formatting, emoji and colour
 // marks: the building blocks shared by chat, lists, boards and the rest.
 import { html, useState, useEffect, useRef, S, t, api, act, uploadFile, download, useLoad, linkify, fmtSize, Icon, Modal, toast,
-  linkKinds, refToken, refsIn } from './lib.js';
+  linkKinds, refToken, refsIn, RefLink } from './lib.js';
 
 const idOK = (id) => /^[A-Za-z0-9_-]{1,80}$/.test(id || '');
 export const imageUrl = (id) => (idOK(id) ? '/api/files/' + id + '/image' : '');
@@ -71,7 +71,11 @@ function format(text, depth = 0) {
   if (last < text.length) plain(text.slice(last));
   return out;
 }
-export const rich = (text) => linkify(text || '').flatMap((part) => (typeof part === 'string' ? format(part) : [part]));
+// In a message, a linked message is shown as a quotation and a linked
+// document as a card.
+const embedded = (part) => (part.type === RefLink && (part.props.type === 'message' || part.props.type === 'document')
+  ? html`<${RefLink} type=${part.props.type} id=${part.props.id} embed />` : part);
+export const rich = (text) => linkify(text || '').flatMap((part) => (typeof part === 'string' ? format(part) : [embedded(part)]));
 
 // wrapSelection puts a mark around the selected text of a text box (or
 // removes it when it is already there).

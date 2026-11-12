@@ -354,7 +354,7 @@ function lookupRef(type, id) {
       let found = [];
       try { found = await api('POST', '/links', { refs }); } catch { /* shown as unavailable */ }
       refs.forEach((r) => refCache.set(r.type + ':' + r.id, { at: Date.now(), ok: false, title: '' }));
-      found.forEach((r) => refCache.set(r.type + ':' + r.id, { at: Date.now(), ok: true, title: r.title }));
+      found.forEach((r) => refCache.set(r.type + ':' + r.id, { at: Date.now(), ok: true, title: r.title, data: r }));
       notify();
     }, 30);
   }
@@ -363,22 +363,54 @@ function lookupRef(type, id) {
 
 // RefLink shows a link to something in Samling by its current title. When
 // the reader has no access to it (or it is gone) the link says only that.
-export function RefLink({ type, id }) {
+//
+// With "embed" (used in chat messages) a linked message is shown as a
+// quotation and a linked document as a card with a download button.
+export function RefLink({ type, id, embed }) {
   useStore();
-  const [section, icon] = linkKinds[type];
+  const [section, icon] = linkKinds[type] || ['chat', 'chat'];
   const r = lookupRef(type, id);
   if (!r.ok) {
     return r.pending ? html`<span class="ref"><${Icon} name=${icon} /> …</span>`
       : html`<span class="ref none" title=${t('link.none_hint')}><${Icon} name="lock" /> ${t('link.none', { kind: t('link.kind_' + type) })}</span>`;
   }
-  return html`<a class="ref" href=${'#/' + section + '/' + encodeURIComponent(id)}><${Icon} name=${icon} /> ${r.title || t('link.dm')}</a>`;
+  const d = r.data || {};
+  if (type === 'message') {
+    const href = '#/chat/' + encodeURIComponent(d.channel_id) + '/' + encodeURIComponent(id);
+    const where = r.title ? '#' + r.title : t('link.dm');
+    if (!embed) return html`<a class="ref" href=${href}><${Icon} name="chat" /> ${t('link.message_by', { name: userName(d.user_id), where })}</a>`;
+    return html`<blockquote class="quote">
+      <div class="quote-head"><b>${userName(d.user_id)}</b> <span class="muted small">${where} · ${fmtAgo(d.at)}</span>
+        <a class="small" href=${href}>${t('link.open_message')}</a></div>
+      <div class="pre">${d.text}${d.files > 0 && html` <span class="muted small"><${Icon} name="clip" /> ${t('link.files', { n: d.files })}</span>`}</div></blockquote>`;
+  }
+  const href = '#/' + section + '/' + encodeURIComponent(id);
+  if (type === 'document' && embed && d.file_id) {
+    const picture = /^image\/(jpeg|png|gif|webp)$/.test(d.mime || '') && /^[A-Za-z0-9_-]+$/.test(d.file_id);
+    return html`<span class="doc-card">
+      ${picture ? html`<a href=${href}><img src=${'/api/files/' + d.file_id + '/image'} alt="" loading="lazy" /></a>` : html`<${Icon} name="doc" />`}
+      <span class="grow"><a href=${href}><b>${r.title}</b></a><br />
+        <span class="muted small">${d.folder ? '/' + d.folder + ' · ' : ''}v${d.version} · ${fmtSize(d.size)}</span></span>
+      <button type="button" class="icon-btn" aria-label=${t('common.download') + ': ' + r.title} title=${t('common.download')}
+        onClick=${() => act(() => download('GET', '/documents/' + id + '/download', undefined, d.name))}><${Icon} name="download" /></button></span>`;
+  }
+  return html`<a class="ref" href=${href}><${Icon} name=${icon} /> ${r.title || t('link.dm')}</a>`;
 }
+
+// copyText puts a text on the clipboard (or shows it for copying by hand
+// where the browser does not allow that).
+export async function copyText(text, okMsg) {
+  try { await navigator.clipboard.writeText(text); toast(okMsg); } catch { window.prompt(okMsg, text); }
+}
+export const pageUrl = (...parts) => location.origin + '/#/' + parts.map(encodeURIComponent).join('/');
 
 // internalRef recognises the address of a page of this Samling.
 function internalRef(url) {
   try {
     const u = new URL(url);
     if (u.origin !== location.origin) return null;
+    const msg = /^#\/chat\/[A-Za-z0-9_-]{1,80}\/([A-Za-z0-9_-]{1,80})$/.exec(u.hash);
+    if (msg) return { type: 'message', id: msg[1] };
     const m = /^#\/([a-z]+)\/([A-Za-z0-9_-]{1,80})$/.exec(u.hash);
     return m && sectionKind[m[1]] ? { type: sectionKind[m[1]], id: m[2] } : null;
   } catch { return null; }
@@ -398,7 +430,7 @@ export function refsIn(text) {
 // links. Text is always rendered as text nodes (never as HTML).
 export function linkify(text) {
   const out = [];
-  const re = /(https?:\/\/[^\s<>"']+[^\s<>"'.,;:!?)\]])|([\w.+-]+@[\w-]+(?:\.[\w-]+)+)|\[\[(channel|document|list|poll|event|meeting|decision|board):([A-Za-z0-9_-]{1,80})\]\]/g;
+  const re = /(https?:\/\/[^\s<>"']+[^\s<>"'.,;:!?)\]])|([\w.+-]+@[\w-]+(?:\.[\w-]+)+)|\[\[(channel|document|list|poll|event|meeting|decision|board|message):([A-Za-z0-9_-]{1,80})\]\]/g;
   let last = 0, m;
   while ((m = re.exec(text))) {
     if (m.index > last) out.push(text.slice(last, m.index));
@@ -465,6 +497,7 @@ const paths = {
   image: 'M4 5h16v14H4zM4 16l5-5 4 4 3-3 4 4M15 9.500h.01',
   bell: 'M6 16V11a6 6 0 0112 0v5l1.500 2h-15zM10 20.500a2 2 0 004 0',
   link: 'M10 14a4 4 0 005.700 0l3-3a4 4 0 00-5.700-5.700l-1 1M14 10a4 4 0 00-5.700 0l-3 3a4 4 0 005.700 5.700l1-1',
+  sort: 'M8 5v14M5 8l3-3 3 3M16 19V5M13 16l3 3 3-3',
   key: 'M15 9a4 4 0 11-3.900 5H8v2H6v2H3v-3l6.100-6.100A4 4 0 0115 9zM16 8h.01',
 };
 export function Icon({ name, label }) {
@@ -537,11 +570,15 @@ export function useForm(initial) {
 export function Page({ title, actions, children, back }) {
   // Every page links to the online help topic of its section.
   const section = (location.hash.replace(/^#\/?/, '') || 'home').split('/')[0];
+  // Pages of a single thing (a poll, a board …) offer their address for pasting into a text.
+  const parts = (location.hash.replace(/^#\/?/, '') || 'home').split('/');
+  const copyLink = parts.length === 2 && sectionKind[section] && parts[1] !== 'new' && html`<button class="icon-btn no-print" aria-label=${t('link.copy')} title=${t('link.copy')}
+    onClick=${() => copyText(pageUrl(section, parts[1]), t('link.copied'))}><${Icon} name="link" /></button>`;
   const helpLink = section !== 'help' && html`<a class="icon-btn no-print" href=${'#/help/' + encodeURIComponent(section)} aria-label=${t('nav.help')} title=${t('nav.help')}><${Icon} name="help" /></a>`;
   return html`<section class="page">
     <header class="page-head">
       ${back && html`<a class="icon-btn" href=${back} aria-label=${t('common.back')}><${Icon} name="left" /></a>`}
-      <h1>${title}</h1><div class="actions">${actions}${helpLink}</div>
+      <h1>${title}</h1><div class="actions">${actions}${copyLink}${helpLink}</div>
     </header>${children}</section>`;
 }
 

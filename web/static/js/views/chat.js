@@ -1,4 +1,4 @@
-import { html, useState, useEffect, useRef, useStore, S, t, api, act, uploadFile, useLoad, useLive, go, can, userName, linkify, fmtAgo, setBlocked,
+import { html, useState, useEffect, useRef, useStore, S, t, api, act, uploadFile, useLoad, useLive, go, can, userName, linkify, fmtAgo, setBlocked, copyText, pageUrl,
   Icon, Modal, Field, useForm, ShareEditor, ShareButton, Empty, Loading, confirmDelete, toast, errText } from '../lib.js';
 import { Avatar, rich, FormatBar, formatKey, EmojiButton, reactionEmojis, CameraButtons, FileView, LinkButton, insertAtCursor } from '../media.js';
 
@@ -6,7 +6,7 @@ const dmName = (ch, me) => (ch.members || []).filter((id) => id !== me.id).map(u
 const chName = (ch, me) => (ch.kind === 'dm' ? dmName(ch, me) : ch.name);
 
 function NewChannel({ onClose }) {
-  const [f, , bind] = useForm({ name: '', topic: '' });
+  const [f, , bind] = useForm({ name: '', topic: '', description: '' });
   const [shares, setShares] = useState([{ type: 'all', id: '', level: 2 }]);
   const submit = async (e) => {
     e.preventDefault();
@@ -16,8 +16,25 @@ function NewChannel({ onClose }) {
   return html`<${Modal} title=${t('chat.new_channel')} onClose=${onClose}><form onSubmit=${submit}>
     <${Field} label=${t('common.name')}><input ...${bind('name')} required maxlength="60" /><//>
     <${Field} label=${t('chat.topic')}><input ...${bind('topic')} maxlength="300" /><//>
+    <${Field} label=${t('common.description')} hint=${t('chat.description_hint')}><textarea ...${bind('description')} rows="3" maxlength="2000"></textarea><//>
     <${Field} group label=${t('share.who')} hint=${t('chat.share_hint')}><${ShareEditor} value=${shares} onChange=${setShares} /><//>
     <div class="buttons"><button type="button" onClick=${onClose}>${t('common.cancel')}</button><button class="primary">${t('common.create')}</button></div>
+  </form><//>`;
+}
+
+// EditChannel: name, topic and description, for the owner of the channel
+// and for administrators.
+function EditChannel({ ch, onClose }) {
+  const [f, , bind] = useForm({ name: ch.name, topic: ch.topic, description: ch.description || '' });
+  const submit = async (e) => {
+    e.preventDefault();
+    if (await act(() => api('PATCH', '/channels/' + ch.id, f), t('common.saved'))) onClose(true);
+  };
+  return html`<${Modal} title=${t('chat.edit_channel')} onClose=${() => onClose(false)}><form onSubmit=${submit}>
+    <${Field} label=${t('common.name')}><input ...${bind('name')} required maxlength="60" /><//>
+    <${Field} label=${t('chat.topic')}><input ...${bind('topic')} maxlength="300" /><//>
+    <${Field} label=${t('common.description')} hint=${t('chat.description_hint')}><textarea ...${bind('description')} rows="4" maxlength="2000"></textarea><//>
+    <div class="buttons"><button type="button" onClick=${() => onClose(false)}>${t('common.cancel')}</button><button class="primary">${t('common.save')}</button></div>
   </form><//>`;
 }
 
@@ -51,7 +68,7 @@ function Message({ m, ch, me, reload, onReply, reply }) {
   const pin = async () => { if (await act(() => api(m.pinned_at ? 'DELETE' : 'POST', `/messages/${m.id}/pin`))) reload(); };
   const react = async (emoji) => { if (await act(() => api('POST', `/messages/${m.id}/reactions`, { emoji }))) reload(); };
   if (m.deleted) return html`<div class=${'msg' + (reply ? ' reply' : '')}><span class="avatar">–</span><div class="body muted"><i>${t('chat.deleted')}</i></div></div>`;
-  return html`<div class=${'msg' + (m.pinned_at ? ' pinned' : '') + (reply ? ' reply' : '')}>
+  return html`<div id=${'m-' + m.id} class=${'msg' + (m.pinned_at ? ' pinned' : '') + (reply ? ' reply' : '')}>
     <${Avatar} id=${m.user_id} size=${reply ? 'sm' : ''} />
     <div class="body">
       <div class="meta"><b>${userName(m.user_id)}</b>${S.userMap[m.user_id] && html`<span class="handle">@${S.userMap[m.user_id].username}</span>`}<time>${fmtAgo(m.created_at)}</time>
@@ -67,6 +84,7 @@ function Message({ m, ch, me, reload, onReply, reply }) {
     <div class="tools">
       <${EmojiButton} set=${reactionEmojis} label=${t('chat.react')} onPick=${react} />
       ${onReply && html`<button class="icon-btn" onClick=${onReply} aria-label=${t('chat.comment')} title=${t('chat.comment')}><${Icon} name="reply" /></button>`}
+      <button class="icon-btn" onClick=${() => copyText(pageUrl('chat', ch.id, m.id), t('chat.link_copied'))} aria-label=${t('chat.copy_link')} title=${t('chat.copy_link')}><${Icon} name="link" /></button>
       ${ch.level >= 2 && html`<button class="icon-btn" onClick=${pin} aria-label=${m.pinned_at ? t('chat.unpin') : t('chat.pin')} title=${m.pinned_at ? t('chat.unpin') : t('chat.pin')}><${Icon} name="pin" /></button>`}
       ${mine && html`<button class="icon-btn" onClick=${() => { setText(m.body); setEditing(true); }} aria-label=${t('common.edit')} title=${t('common.edit')}><${Icon} name="edit" /></button>`}
       ${(mine || ch.level >= 3) && html`<button class="icon-btn" onClick=${del} aria-label=${t('common.delete')} title=${t('common.delete')}><${Icon} name="trash" /></button>`}
@@ -88,7 +106,9 @@ function CommentBox({ onSend, onCancel }) {
     <button type="button" class="icon-btn" onClick=${onCancel} aria-label=${t('common.cancel')} title=${t('common.cancel')}><${Icon} name="x" /></button></form>`;
 }
 
-function Conversation({ ch, me, onChanged }) {
+function Conversation({ ch, me, onChanged, focus }) {
+  const [editing, setEditing] = useState(false);
+  const sought = useRef(0);
   const [msgs, setMsgs] = useState(null);
   const [more, setMore] = useState(true);
   const [pins, setPins] = useState([]);
@@ -119,6 +139,24 @@ function Conversation({ ch, me, onChanged }) {
   useEffect(() => { setMsgs(null); setMore(true); stick.current = true; load(); }, [ch.id]);
   useLive(['channel'], (e) => { if (e.id === ch.id) load(); });
   useEffect(() => { if (stick.current && box.current) box.current.scrollTop = box.current.scrollHeight; }, [msgs]);
+  // A link to a message (#/chat/<channel>/<message>) scrolls to it. A
+  // message further back is looked for in a few older pages.
+  useEffect(() => {
+    if (!focus || !msgs) return;
+    const el = document.getElementById('m-' + focus);
+    if (el) {
+      stick.current = false;
+      el.scrollIntoView({ block: 'center' });
+      el.classList.add('target');
+      setTimeout(() => el.classList.remove('target'), 4000);
+      go('chat', ch.id);
+    } else if (more && msgs.length && sought.current < 5) {
+      sought.current++;
+      loadOlder();
+    } else {
+      go('chat', ch.id);
+    }
+  }, [focus, msgs]);
   const onScroll = () => { const el = box.current; stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80; };
   const loadOlder = async () => {
     const older = await act(() => api('GET', `/channels/${ch.id}/messages?limit=60&before=${msgs[0].id}`));
@@ -186,10 +224,12 @@ function Conversation({ ch, me, onChanged }) {
   return html`<div class="conv">
     <div class="conv-head">
       <a class="icon-btn chat-back" href="#/chat" aria-label=${t('common.back')}><${Icon} name="left" /></a>
-      <div class="grow"><h1>${ch.kind === 'dm' ? '' : '# '}${chName(ch, me)}</h1>${ch.topic && html`<div class="muted small">${linkify(ch.topic)}</div>`}</div>
+      <div class="grow"><h1>${ch.kind === 'dm' ? '' : '# '}${chName(ch, me)}</h1>${ch.topic && html`<div class="muted small">${linkify(ch.topic)}</div>`}
+        ${ch.description && html`<details class="small about"><summary class="muted">${t('chat.about')}</summary><div class="pre">${linkify(ch.description)}</div></details>`}</div>
       <button onClick=${() => setShowPins(!showPins)} aria-expanded=${showPins}><${Icon} name="pin" /> ${t('chat.pins')} (${pins.length})</button>
       ${other && html`<button onClick=${() => setBlocked(other, !blocked)} aria-pressed=${blocked}><${Icon} name="block" /> ${blocked ? t('block.undo') : t('block.do')}</button>`}
-      ${ch.kind === 'channel' && ch.level >= 3 && html`<${ShareButton} type="channel" id=${ch.id} onDone=${onChanged} />
+      ${ch.kind === 'channel' && ch.level >= 3 && html`<button onClick=${() => setEditing(true)}><${Icon} name="edit" /> ${t('chat.edit_channel')}</button>
+        <${ShareButton} type="channel" id=${ch.id} onDone=${onChanged} />
         <button class="icon-btn danger" onClick=${del} aria-label=${t('common.delete')} title=${t('common.delete')}><${Icon} name="trash" /></button>`}
     </div>
     ${showPins && html`<div class="pins" role="region" aria-label=${t('chat.pins')}>
@@ -209,6 +249,7 @@ function Conversation({ ch, me, onChanged }) {
             ${replyTo === m.id && html`<${CommentBox} onSend=${(body) => comment(m.id, body)} onCancel=${() => setReplyTo(null)} />`}</div>`}
         </div>`)}`}
     </div>
+    ${editing && html`<${EditChannel} ch=${ch} onClose=${(ok) => { setEditing(false); if (ok) onChanged(); }} />`}
     ${blocked && html`<div class="notice small" role="status">${t('block.notice', { name: userName(other) })}</div>`}
     ${ch.level >= 2 ? html`<form class="composer" onSubmit=${send}>
       ${files.length > 0 && html`<div class="files">${files.map((f) => html`<${FileView} key=${f.id} file=${f} onRemove=${() => setFiles(files.filter((x) => x.id !== f.id))} />`)}</div>`}
@@ -234,6 +275,7 @@ export function Chat({ route }) {
   const s = useStore();
   const st = useLoad(() => api('GET', '/channels'));
   const [modal, setModal] = useState(null);
+  const [sorting, setSorting] = useState(false);
   useLive(['channel'], st.reload);
   if (!st.data) return html`<${Loading} state=${st} />`;
   const channels = st.data.filter((c) => c.kind === 'channel');
@@ -243,16 +285,28 @@ export function Chat({ route }) {
     ${c.kind === 'dm' ? html`<${Icon} name="people" />` : html`<span aria-hidden="true">#</span>`}
     <span class="grow">${chName(c, s.me)}</span>${c.level < 2 && html`<${Icon} name="lock" label=${t('chat.readonly')} />`}
     ${c.unread > 0 && html`<span class="count" aria-label=${t('chat.unread', { n: c.unread })}>${c.unread}</span>`}</a>`;
+  // Each person arranges the channels in their own order.
+  const move = async (i, d) => {
+    const ids = channels.map((c) => c.id);
+    [ids[i], ids[i + d]] = [ids[i + d], ids[i]];
+    if (await act(() => api('PUT', '/me/channel-order', { ids }))) st.reload();
+  };
+  const sortRow = (c, i) => html`<div class="sort-row" key=${c.id}><span aria-hidden="true">#</span><span class="grow">${c.name}</span>
+    <button class="icon-btn" disabled=${i === 0} onClick=${() => move(i, -1)} aria-label=${t('common.move_up') + ': ' + c.name}><${Icon} name="up" /></button>
+    <button class="icon-btn" disabled=${i === channels.length - 1} onClick=${() => move(i, 1)} aria-label=${t('common.move_down') + ': ' + c.name}><${Icon} name="down" /></button></div>`;
   return html`<div class=${'chat' + (current ? ' has-conv' : '')}>
     <nav class="chan-list" aria-label=${t('nav.chat')}>
-      <h2><span class="grow">${t('chat.channels')}</span>${can('channels.create') && html`<button class="icon-btn" onClick=${() => setModal('channel')}
+      <h2><span class="grow">${t('chat.channels')}</span>
+        ${channels.length > 1 && html`<button class="icon-btn" aria-pressed=${sorting} onClick=${() => setSorting(!sorting)}
+          aria-label=${t('chat.sort')} title=${t('chat.sort')}><${Icon} name=${sorting ? 'check' : 'sort'} /></button>`}${can('channels.create') && html`<button class="icon-btn" onClick=${() => setModal('channel')}
         aria-label=${t('chat.new_channel')} title=${t('chat.new_channel')}><${Icon} name="plus" /></button>`}</h2>
-      ${channels.map(item)}
+      ${sorting ? channels.map(sortRow) : channels.map(item)}
+      ${sorting && html`<p class="muted small sort-hint">${t('chat.sort_hint')}</p>`}
       <h2><span class="grow">${t('chat.dms')}</span><button class="icon-btn" onClick=${() => setModal('dm')} aria-label=${t('chat.new_dm')} title=${t('chat.new_dm')}><${Icon} name="plus" /></button></h2>
       ${dms.map(item)}
       ${dms.length === 0 && html`<p class="muted small" style=${{ padding: '0 1rem' }}>${t('chat.no_dms')}</p>`}
     </nav>
-    ${current ? html`<${Conversation} ch=${current} me=${s.me} onChanged=${st.reload} key=${current.id} />`
+    ${current ? html`<${Conversation} ch=${current} me=${s.me} onChanged=${st.reload} focus=${route[2]} key=${current.id} />`
       : html`<div class="conv"><${Empty} icon="chat" text=${t('chat.pick')} /></div>`}
     ${modal === 'channel' && html`<${NewChannel} onClose=${() => { setModal(null); st.reload(); }} />`}
     ${modal === 'dm' && html`<${NewDM} onClose=${() => { setModal(null); st.reload(); }} />`}

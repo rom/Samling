@@ -275,7 +275,11 @@ because the final chunk must carry the flag. Passphrase protected files
   text. Titles are resolved per reader through `POST /api/links`, which
   answers for something unreadable exactly as for something that does not
   exist. A link therefore discloses nothing its reader may not see, and
-  following it goes through the normal access checks.
+  following it goes through the normal access checks. The same holds for a
+  quoted message: its text is fetched for each reader and only given to
+  those who can read the conversation it is in — quoting a message from a
+  closed channel in an open one shows the text to nobody new. A deleted
+  message can no longer be quoted.
 * **Request paths in the client**: ids taken from the address bar or from
   server data are only used in API paths made of plain segments; the client
   refuses anything else and ignores routes that are not plain segments. A

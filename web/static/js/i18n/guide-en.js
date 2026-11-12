@@ -146,6 +146,21 @@ Only the participants can read a direct message. Not even an administrator can. 
 # Block direct messages
 If you do not want direct messages from someone, open the conversation with them and choose [[block.do]], or use the same button beside the person under [[nav.people]]. The person can then neither write to you nor start a new conversation with you. They are not told, and channels are not affected. Lift the block with [[block.undo]], in the same place or under [[nav.settings]].
 
+# Quote a message or include a document
+- **Quote a message:** point at the message and choose the chain symbol ([[chat.copy_link]]). Then paste the link into a message – in the same conversation or another one. The message is shown there as a quotation with its author and time, and [[link.open_message]] leads to the original.
+- **Include a document:** open the document under [[nav.documents]] and choose [[link.copy]] at the top of the page, then paste the link into your message. You can also choose [[link.insert]] above the message field and pick the document. It is shown as a card with its name, version and a download button; a picture is shown with a small preview.
+- Only readers who can read the original conversation see a quoted message, and only readers with access to the document see its card. Others see just that there is a link they cannot open.
+
+# Arrange the channels your way
+1. Choose the arrows beside [[chat.channels]] ([[chat.sort]]).
+2. Move the channels up and down with the arrows on each row.
+3. Choose the button again when you are done.
+
+The order is yours alone and follows your account to other devices. New channels are placed after the ones you have arranged.
+
+# Edit a channel
+The owner of a channel, administrators and leaders can choose [[chat.edit_channel]] at the top of the channel to change its name, its topic and a longer description. The description is shown under [[chat.about]].
+
 # Channels
 - Creating a channel requires the permission [[perm.channels.create]], which leaders normally have. Use the plus sign beside [[chat.channels]] ([[chat.new_channel]]).
 - The sharing of a channel decides who can read and who can write. A channel that everyone can read but only a few can write in works as a notice board. In such a channel you see a padlock and the text [[chat.readonly]].

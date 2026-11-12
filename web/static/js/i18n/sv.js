@@ -350,4 +350,20 @@ export default {
   'link.none_hint': 'Du har inte åtkomst till detta, eller så finns det inte längre.',
   'link.dm': 'Direktmeddelande',
   'link.in_text': 'Länkar i texten',
+
+  // channel order and editing, quoted messages, document cards
+  'link.kind_message': 'Meddelande',
+  'link.message_by': 'Meddelande från {name} i {where}',
+  'link.open_message': 'Öppna',
+  'link.files': '{n} bifogade',
+  'link.copy': 'Kopiera en länk till den här sidan',
+  'link.copied': 'Länken är kopierad. Klistra in den i ett meddelande eller en text för att länka hit.',
+  'chat.copy_link': 'Kopiera en länk till meddelandet',
+  'chat.link_copied': 'Länken är kopierad. Klistra in den i ett meddelande för att citera det här meddelandet där.',
+  'chat.edit_channel': 'Redigera kanal',
+  'chat.description_hint': 'Vad kanalen är till för. Visas under ”Om kanalen”.',
+  'chat.about': 'Om kanalen',
+  'chat.sort': 'Ändra ordningen på kanalerna',
+  'chat.sort_hint': 'Ordningen är bara din; andra påverkas inte.',
+  'act.channel.updated': 'Ändrade kanal',
 };

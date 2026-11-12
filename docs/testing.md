@@ -83,6 +83,7 @@ exercised end to end. Nothing is mocked.
 | `TestCommentsAndReactions` | Comments (one level, same channel, write access); reactions (fixed set, toggle, counts, read access is enough, removed with the message) |
 | `TestMentionsRespectAccess` | Mentions notify only people who can read the conversation (channels, direct messages), once per message, also via edits and comments; hidden again when access is withdrawn or the message is deleted; other people's notifications cannot be marked |
 | `TestInternalLinksResolveOnlyWhatTheReaderMaySee` | Link titles only for readable items; unreadable, missing and malformed references are omitted alike |
+| `TestChannelOrderEditingAndQuotedMessages` | Per-person channel order (does not affect others, ignores unreadable channels); editing channels (owner/administrator only, not direct conversations); quoted messages and document cards resolved only for readers with access; deleted messages |
 | `TestAttachments` | Attachments on lists, cards, events, polls, decisions: access levels, own uploads only, file access follows the item, clean-up |
 
 ### Security regression tests (`internal/app/security_test.go`)
@@ -168,7 +169,9 @@ marks, attachments on a card, profile fields and picture, blocking,
 internal links (picker, pasted address, link without access, link from a
 meeting to a board), mentions (suggestions while typing, the Mentions page
 of the mentioned person, and no notice for a mention in somebody else's
-direct conversation),
+direct conversation), own channel order (kept after reload), editing a
+channel, quoting a message through its copied link, a document card with
+download, and following a quotation to its message,
 encrypted backup download, and that the
 member sees shared but not private content and no administration menu. It
 fails on any uncaught JavaScript error. It needs Node.js with the

@@ -696,6 +696,7 @@ func (a *App) hAdminDeleteUser(c *Ctx) error {
 			`DELETE FROM groups WHERE scope='local' AND owner_id=?`,
 			`DELETE FROM acl WHERE subj_type='user' AND subj_id=?`,
 			`DELETE FROM channel_reads WHERE user_id=?`,
+			`DELETE FROM channel_order WHERE user_id=?`,
 			`DELETE FROM passkeys WHERE user_id=?`,
 			`DELETE FROM recovery_codes WHERE user_id=?`,
 			`DELETE FROM notifications WHERE user_id=?`,

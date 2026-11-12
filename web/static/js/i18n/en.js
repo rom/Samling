@@ -350,4 +350,20 @@ export default {
   'link.none_hint': 'You do not have access to this, or it no longer exists.',
   'link.dm': 'Direct message',
   'link.in_text': 'Links in the text',
+
+  // channel order and editing, quoted messages, document cards
+  'link.kind_message': 'Message',
+  'link.message_by': 'Message from {name} in {where}',
+  'link.open_message': 'Open',
+  'link.files': '{n} attached',
+  'link.copy': 'Copy a link to this page',
+  'link.copied': 'Link copied. Paste it into a message or a text to link here.',
+  'chat.copy_link': 'Copy a link to the message',
+  'chat.link_copied': 'Link copied. Paste it into a message to quote this message there.',
+  'chat.edit_channel': 'Edit channel',
+  'chat.description_hint': 'What the channel is for. Shown under "About the channel".',
+  'chat.about': 'About the channel',
+  'chat.sort': 'Change the order of the channels',
+  'chat.sort_hint': 'The order is yours alone; others are not affected.',
+  'act.channel.updated': 'Changed channel',
 };

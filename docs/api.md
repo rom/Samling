@@ -66,9 +66,10 @@ report the caller's level (1 read, 2 write, 3 manage).
 | POST | `/api/auth/logout` | signed in (limited) | Sign out, revoke the session |
 | GET | `/api/me` | signed in (limited) | Profile, roles, permissions, CSRF token, pending step, organisation name, limits |
 | PATCH | `/api/me` | signed in (limited) | Update display name, e-mail, phone, contact visibility, locale (`sv`/`en`), settings, `avatar` (`""`, `preset:1`–`preset:24`, or `file:<id>` of an own uploaded picture), `profile` (`address`, `interests`, `specialities`, `about`) and `profile_shared` (which of those fields other members may see) |
+| PUT | `/api/me/channel-order` | signed in | The caller's own order of the channels (`ids`). `GET /api/channels` returns the channels in that order; channels not listed follow by name |
 | GET | `/api/notifications` | signed in | The caller's mentions: `unread` and the latest 50 `items` (`actor_id`, `channel_id`, `channel` name, `message_id`, `snippet`, `read`). Only mentions in conversations the caller can read at the time of the request |
 | POST | `/api/notifications/read` | signed in | Mark as read: `ids`, or all when empty |
-| POST | `/api/links` | signed in | Resolve internal links: `refs` (`type`: channel, document, list, poll, event, meeting, decision, board; `id`), at most 100. Returns `type`, `id`, `title` for those the caller can read; unreadable and missing ones are omitted alike |
+| POST | `/api/links` | signed in | Resolve internal links: `refs` (`type`: channel, document, list, poll, event, meeting, decision, board; `id`), at most 100. Also `message` (written `[[message:id]]` or as the address `#/chat/<channel>/<message>`). Returns `type`, `id`, `title` for those the caller can read; unreadable and missing ones are omitted alike. A message also comes with `channel_id`, `user_id`, `at`, `text` (at most 600 bytes) and `files`; a document with `folder`, `version`, `file_id`, `name`, `mime`, `size` |
 | GET | `/api/me/blocks` | signed in | Ids of the people whose direct messages the caller has blocked |
 | PUT / DELETE | `/api/me/blocks/{id}` | signed in | Block / stop blocking direct messages from a person |
 | POST | `/api/me/password` | signed in (limited) | Change password (`current`, `new`) |
@@ -128,7 +129,7 @@ report the caller's level (1 read, 2 write, 3 manage).
 |--------|------|--------|---------|
 | GET | `/api/channels` | signed in | Visible channels and direct messages with unread counts |
 | POST | `/api/channels` | perm `channels.create` | Create a channel (`name`, `topic`, `shares`) |
-| PATCH | `/api/channels/{id}` | level manage | Rename, set topic |
+| PATCH | `/api/channels/{id}` | level manage (owner, or `content.moderate` for a shared channel) | Set `name`, `topic` and `description`; not for direct conversations |
 | DELETE | `/api/channels/{id}` | level manage | Delete channel and messages |
 | POST | `/api/dm` | signed in | Open (or find) a direct conversation (`user_ids`) |
 | GET | `/api/channels/{id}/messages` | level read | Messages, oldest first (`?before=<id of the oldest message shown>`, `?limit=` ≤ 200) |

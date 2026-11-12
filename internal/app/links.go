@@ -160,6 +160,44 @@ type LinkRef struct {
 	Type  string `json:"type"`
 	ID    string `json:"id"`
 	Title string `json:"title"`
+	// For a message: where it is, who wrote it, when, and its text, so
+	// that it can be shown as a quotation.
+	ChannelID string `json:"channel_id,omitempty"`
+	UserID    string `json:"user_id,omitempty"`
+	At        int64  `json:"at,omitempty"`
+	Text      string `json:"text,omitempty"`
+	Files     int    `json:"files,omitempty"`
+	// For a document: its current version and file, so that it can be
+	// shown with a download button (and a preview when it is a picture).
+	Folder  string `json:"folder,omitempty"`
+	Version int    `json:"version,omitempty"`
+	FileID  string `json:"file_id,omitempty"`
+	Name    string `json:"name,omitempty"`
+	Mime    string `json:"mime,omitempty"`
+	Size    int64  `json:"size,omitempty"`
+}
+
+// resolveMessage describes a message for a reader who can read the
+// conversation it is in.
+func (a *App) resolveMessage(c *Ctx, id string) (LinkRef, bool) {
+	ref := LinkRef{Type: "message", ID: id}
+	if err := a.DB.Row(c.ctx(), `SELECT m.channel_id, m.user_id, m.created_at, m.body, CASE WHEN ch.kind='dm' THEN '' ELSE ch.name END,
+		(SELECT COUNT(*) FROM message_files f WHERE f.message_id=m.id)
+		FROM messages m JOIN channels ch ON ch.id=m.channel_id WHERE m.id=? AND m.deleted_at=0`, id).
+		Scan(&ref.ChannelID, &ref.UserID, &ref.At, &ref.Text, &ref.Title, &ref.Files); err != nil {
+		return ref, false
+	}
+	if lvl, err := a.level(c.ctx(), c.U, "channel", ref.ChannelID); err != nil || lvl < LevelRead {
+		return ref, false
+	}
+	if len(ref.Text) > 600 {
+		cut := 600
+		for cut > 0 && !utf8.RuneStart(ref.Text[cut]) {
+			cut--
+		}
+		ref.Text = ref.Text[:cut] + "…"
+	}
+	return ref, true
 }
 
 // hResolveLinks returns the titles of the things a text links to — for
@@ -178,6 +216,12 @@ func (a *App) hResolveLinks(c *Ctx) error {
 	}
 	out := []LinkRef{}
 	for _, ref := range in.Refs {
+		if ref.Type == "message" {
+			if m, ok := a.resolveMessage(c, ref.ID); ok {
+				out = append(out, m)
+			}
+			continue
+		}
 		q, ok := linkTitles[ref.Type]
 		if !ok {
 			continue
@@ -189,7 +233,13 @@ func (a *App) hResolveLinks(c *Ctx) error {
 		if err := a.DB.Row(c.ctx(), q, ref.ID).Scan(&title); err != nil {
 			continue
 		}
-		out = append(out, LinkRef{Type: ref.Type, ID: ref.ID, Title: title})
+		res := LinkRef{Type: ref.Type, ID: ref.ID, Title: title}
+		if ref.Type == "document" {
+			_ = a.DB.Row(c.ctx(), `SELECT d.folder, d.current_version, f.id, f.name, f.mime, f.size FROM documents d
+				JOIN doc_versions v ON v.doc_id=d.id AND v.version=d.current_version JOIN files f ON f.id=v.file_id WHERE d.id=?`, ref.ID).
+				Scan(&res.Folder, &res.Version, &res.FileID, &res.Name, &res.Mime, &res.Size)
+		}
+		out = append(out, res)
 	}
 	return c.JSON(out)
 }

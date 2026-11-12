@@ -202,30 +202,35 @@ func (a *App) hEvents(c *Ctx) error {
 // ---------- channels ----------
 
 type Channel struct {
-	ID       string   `json:"id"`
-	Kind     string   `json:"kind"` // channel | dm
-	Name     string   `json:"name"`
-	Topic    string   `json:"topic"`
-	OwnerID  string   `json:"owner_id"`
-	Members  []string `json:"members,omitempty"` // dm only
-	Unread   int      `json:"unread"`
-	LastAt   int64    `json:"last_at"`
-	Level    int      `json:"level"`
-	Archived bool     `json:"-"`
+	ID    string `json:"id"`
+	Kind  string `json:"kind"` // channel | dm
+	Name  string `json:"name"`
+	Topic string `json:"topic"`
+	// Description is a longer text about what the channel is for.
+	Description string   `json:"description"`
+	OwnerID     string   `json:"owner_id"`
+	Members     []string `json:"members,omitempty"` // dm only
+	Unread      int      `json:"unread"`
+	LastAt      int64    `json:"last_at"`
+	Level       int      `json:"level"`
+	Archived    bool     `json:"-"`
 }
 
 func (a *App) hChannels(c *Ctx) error {
 	vis, args := visible(c.U, "channel", "ch")
-	q := `SELECT ch.id, ch.kind, ch.name, ch.topic, ch.owner_id,
+	// Channels come in the person's own order when they have chosen one
+	// (see hChannelOrder); channels they have not placed follow by name.
+	q := `SELECT ch.id, ch.kind, ch.name, ch.topic, ch.description, ch.owner_id,
 		COALESCE((SELECT MAX(m.created_at) FROM messages m WHERE m.channel_id=ch.id),0),
 		(SELECT COUNT(*) FROM messages m WHERE m.channel_id=ch.id AND m.deleted_at=0 AND m.user_id<>? AND m.created_at >
 			COALESCE((SELECT last_read_at FROM channel_reads r WHERE r.user_id=? AND r.channel_id=ch.id),0))
-		FROM channels ch WHERE ` + vis + ` ORDER BY ch.kind, LOWER(ch.name)`
-	args = append([]any{c.U.ID, c.U.ID}, args...)
+		FROM channels ch WHERE ` + vis + ` ORDER BY ch.kind,
+		COALESCE((SELECT o.position FROM channel_order o WHERE o.user_id=? AND o.channel_id=ch.id), 1000000), LOWER(ch.name), ch.id`
+	args = append(append([]any{c.U.ID, c.U.ID}, args...), c.U.ID)
 	out := []Channel{}
 	err := a.DB.Each(c.ctx(), q, args, func(r *sql.Rows) error {
 		var ch Channel
-		if err := r.Scan(&ch.ID, &ch.Kind, &ch.Name, &ch.Topic, &ch.OwnerID, &ch.LastAt, &ch.Unread); err != nil {
+		if err := r.Scan(&ch.ID, &ch.Kind, &ch.Name, &ch.Topic, &ch.Description, &ch.OwnerID, &ch.LastAt, &ch.Unread); err != nil {
 			return err
 		}
 		out = append(out, ch)
@@ -257,9 +262,10 @@ func (a *App) hChannels(c *Ctx) error {
 
 func (a *App) hCreateChannel(c *Ctx) error {
 	var in struct {
-		Name   string  `json:"name"`
-		Topic  string  `json:"topic"`
-		Shares []Share `json:"shares"`
+		Name        string  `json:"name"`
+		Topic       string  `json:"topic"`
+		Description string  `json:"description"`
+		Shares      []Share `json:"shares"`
 	}
 	if err := c.Bind(&in); err != nil {
 		return err
@@ -273,8 +279,8 @@ func (a *App) hCreateChannel(c *Ctx) error {
 	}
 	id, now := crypto.NewID(), a.unix()
 	err = a.DB.InTx(c.ctx(), func(tx *db.Tx) error {
-		if err := tx.Exec(c.ctx(), `INSERT INTO channels (id,owner_id,kind,name,topic,created_at,updated_at) VALUES (?,?,'channel',?,?,?,?)`,
-			id, c.U.ID, in.Name, clean(in.Topic, 300), now, now); err != nil {
+		if err := tx.Exec(c.ctx(), `INSERT INTO channels (id,owner_id,kind,name,topic,description,created_at,updated_at) VALUES (?,?,'channel',?,?,?,?,?)`,
+			id, c.U.ID, in.Name, clean(in.Topic, 300), clean(in.Description, 2000), now, now); err != nil {
 			return err
 		}
 		return setShares(c.ctx(), tx, "channel", id, shares)
@@ -290,12 +296,15 @@ func (a *App) hCreateChannel(c *Ctx) error {
 func (a *App) hUpdateChannel(c *Ctx) error {
 	id := c.Param("id")
 	var in struct {
-		Name  string `json:"name"`
-		Topic string `json:"topic"`
+		Name        string `json:"name"`
+		Topic       string `json:"topic"`
+		Description string `json:"description"`
 	}
 	if err := c.Bind(&in); err != nil {
 		return err
 	}
+	// The owner of a channel, and people with the permission to moderate
+	// shared content (administrators and leaders), may edit it.
 	if err := a.need(c, "channel", id, LevelManage); err != nil {
 		return err
 	}
@@ -305,11 +314,42 @@ func (a *App) hUpdateChannel(c *Ctx) error {
 	if in.Name = clean(in.Name, 60); in.Name == "" {
 		return errBad("name_required")
 	}
-	if err := a.DB.Exec(c.ctx(), `UPDATE channels SET name=?, topic=?, updated_at=? WHERE id=?`, in.Name, clean(in.Topic, 300), a.unix(), id); err != nil {
+	if err := a.DB.Exec(c.ctx(), `UPDATE channels SET name=?, topic=?, description=?, updated_at=? WHERE id=?`,
+		in.Name, clean(in.Topic, 300), clean(in.Description, 2000), a.unix(), id); err != nil {
 		return err
 	}
+	a.logAct(c, true, "channel.updated", "channel", id, in.Name)
 	a.hub.publish(Event{Type: "channel", ID: id})
 	return c.OK()
+}
+
+// hChannelOrder stores the caller's own order of the channels. It affects
+// nobody else. Channels that are not listed keep following by name.
+func (a *App) hChannelOrder(c *Ctx) error {
+	var in struct {
+		IDs []string `json:"ids"`
+	}
+	if err := c.Bind(&in); err != nil {
+		return err
+	}
+	if len(in.IDs) > 500 {
+		return errBad("limit_reached")
+	}
+	return firstErr(a.DB.InTx(c.ctx(), func(tx *db.Tx) error {
+		if err := tx.Exec(c.ctx(), `DELETE FROM channel_order WHERE user_id=?`, c.U.ID); err != nil {
+			return err
+		}
+		for i, id := range in.IDs {
+			// Only channels the person can read are remembered.
+			if lvl, err := a.level(c.ctx(), c.U, "channel", id); err != nil || lvl < LevelRead {
+				continue
+			}
+			if err := tx.Exec(c.ctx(), `INSERT INTO channel_order (user_id,channel_id,position) VALUES (?,?,?) ON CONFLICT DO NOTHING`, c.U.ID, id, i); err != nil {
+				return err
+			}
+		}
+		return nil
+	}), c.OK)
 }
 
 func (a *App) hDeleteChannel(c *Ctx) error {

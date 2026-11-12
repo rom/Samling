@@ -77,6 +77,7 @@ func (a *App) routes() {
 	a.handle("POST /api/messages/{id}/pin", std, a.hPin)
 	a.handle("DELETE /api/messages/{id}/pin", std, a.hPin)
 	a.handle("POST /api/messages/{id}/reactions", std, a.hReact)
+	a.handle("PUT /api/me/channel-order", std, a.hChannelOrder)
 	a.handle("GET /api/notifications", std, a.hNotifications)
 	a.handle("POST /api/notifications/read", std, a.hNotificationsRead)
 	a.handle("POST /api/links", std, a.hResolveLinks)

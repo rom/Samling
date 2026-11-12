@@ -1,0 +1,105 @@
+# Samling configuration (YAML).
+#
+# Precedence, highest first:
+#   1. command line flags   --port, --host, --data-dir (and --config to pick this file)
+#   2. environment          SAMLING_* variables (named next to each key below)
+#   3. this file
+#   4. built-in defaults    (the values shown here unless noted)
+#
+# The file is found via --config FILE, else $SAMLING_CONFIG, else ./samling.yaml.
+# Unknown keys are rejected, so typos never pass silently.
+# Validate with:  samling check-config --config /etc/samling/samling.yaml
+#
+# Keep secrets (database password, S3 keys) out of this file when you can:
+# set them through the environment instead.
+
+# Name shown in the client, in calendar exports and as the issuer in
+# authenticator apps.                                   env: SAMLING_ORG_NAME
+org_name: "Samling"
+
+# Directory for the SQLite database, uploaded files and (by default) the
+# master key. Must be writable by the service user.     env: SAMLING_DATA_DIR
+# flag: --data-dir
+data_dir: "./data"
+
+server:
+  # Address to listen on. Empty = all interfaces.       env: SAMLING_HOST
+  # flag: --host
+  host: ""
+
+  # TCP port to listen on.                              env: SAMLING_PORT
+  # flag: --port
+  # Ports below 1024 (e.g. 443) need CAP_NET_BIND_SERVICE, see
+  # deploy/systemd/samling.service and docs/deployment.md.
+  port: 8443
+
+  # TLS certificate and private key (PEM). The server speaks TLS 1.3 only and
+  # re-reads the files when they change (within about a minute), so renewed
+  # certificates need no restart.     env: SAMLING_TLS_CERT / SAMLING_TLS_KEY
+  # Both must be set together. Without them the server refuses to start
+  # unless insecure_http is true.
+  #   scripts/gen-selfsigned-cert.sh   creates a self-signed pair
+  #   scripts/letsencrypt.sh           obtains and renews Let's Encrypt certificates
+  tls:
+    cert: ""   # e.g. /etc/samling/tls/fullchain.pem
+    key: ""    # e.g. /etc/samling/tls/privkey.pem
+
+  # Serve plain HTTP. Only for local development, or when a reverse proxy on
+  # the same host terminates TLS.                       env: SAMLING_INSECURE_HTTP
+  insecure_http: false
+
+  # Trust X-Forwarded-For / X-Forwarded-Proto from a reverse proxy. Enable
+  # ONLY when every request really passes through your proxy, otherwise
+  # clients can spoof their address.                    env: SAMLING_TRUSTED_PROXY
+  trusted_proxy: false
+
+database:
+  # sqlite (default) or postgres.                       env: SAMLING_DB_DRIVER
+  driver: "sqlite"
+
+  # sqlite:   path of the database file; empty = <data_dir>/samling.db
+  # postgres: connection string (required), for example
+  #           postgres://samling:PASSWORD@127.0.0.1:5432/samling?sslmode=verify-full
+  #                                                     env: SAMLING_DB_DSN
+  dsn: ""
+
+storage:
+  # Where uploaded files are kept: fs (under <data_dir>/blobs) or s3.
+  # Files are always encrypted by Samling before they are stored.
+  #                                                     env: SAMLING_STORAGE_BACKEND
+  backend: "fs"
+
+  # Only used when backend is s3 (any S3 compatible object store).
+  s3:
+    endpoint: ""          # host[:port], no scheme      env: SAMLING_S3_ENDPOINT
+    region: "us-east-1"   #                             env: SAMLING_S3_REGION
+    bucket: ""            # required for s3             env: SAMLING_S3_BUCKET
+    access_key: ""        #                             env: SAMLING_S3_ACCESS_KEY
+    secret_key: ""        # prefer the environment      env: SAMLING_S3_SECRET_KEY
+    prefix: ""            # optional key prefix         env: SAMLING_S3_PREFIX
+    insecure: false       # true = plain HTTP to S3     env: SAMLING_S3_INSECURE
+
+  # Largest accepted upload, in MiB.                    env: SAMLING_MAX_UPLOAD_MB
+  max_upload_mb: 50
+
+security:
+  # File holding the master key (base64, 32 bytes, mode 0600). Empty =
+  # <data_dir>/master.key, which is created automatically on first start.
+  # When systemd provides a credential named "master.key" (LoadCredential=),
+  # that credential is used instead.                    env: SAMLING_MASTER_KEY_FILE
+  # LOSING THIS KEY MAKES PERSONAL DATA AND ALL FILES UNREADABLE. Back it up
+  # (an encrypted "samling backup" contains it).
+  master_key_file: ""
+
+  # Minimum password length (at least 8).               env: SAMLING_MIN_PASSWORD_LENGTH
+  min_password_length: 12
+
+  # Lifetime of a sign-in session, in hours (336 = 14 days).
+  #                                                     env: SAMLING_SESSION_HOURS
+  session_hours: 336
+
+  # Landlock sandbox applied by the server to itself after start-up:
+  #   on      use whatever the running kernel supports (default)
+  #   strict  refuse to start when Landlock is unavailable
+  #   off     disable                                   env: SAMLING_LANDLOCK
+  landlock: "on"

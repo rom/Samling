@@ -1,0 +1,59 @@
+## <summary>Samling club management server.</summary>
+
+########################################
+## <summary>
+##	Execute samling in the samling domain.
+## </summary>
+## <param name="domain">
+##	<summary>
+##	Domain allowed to transition.
+##	</summary>
+## </param>
+#
+interface(`samling_domtrans',`
+	gen_require(`
+		type samling_t, samling_exec_t;
+	')
+
+	corecmd_search_bin($1)
+	domtrans_pattern($1, samling_exec_t, samling_t)
+')
+
+########################################
+## <summary>
+##	Read samling configuration files.
+## </summary>
+## <param name="domain">
+##	<summary>
+##	Domain allowed access.
+##	</summary>
+## </param>
+#
+interface(`samling_read_config',`
+	gen_require(`
+		type samling_etc_t;
+	')
+
+	files_search_etc($1)
+	read_files_pattern($1, samling_etc_t, samling_etc_t)
+')
+
+########################################
+## <summary>
+##	Manage samling data files (database, encrypted files, backups).
+## </summary>
+## <param name="domain">
+##	<summary>
+##	Domain allowed access.
+##	</summary>
+## </param>
+#
+interface(`samling_manage_data',`
+	gen_require(`
+		type samling_var_lib_t;
+	')
+
+	files_search_var_lib($1)
+	manage_dirs_pattern($1, samling_var_lib_t, samling_var_lib_t)
+	manage_files_pattern($1, samling_var_lib_t, samling_var_lib_t)
+')
